@@ -609,7 +609,7 @@ HTML = r"""
 
         .health-tips {
             max-width: 1050px;
-            margin: 16px auto 22px;
+            margin: 8px auto 16px;
             min-height: 125px;
             padding: 17px 20px 15px;
             border-radius: 17px;
@@ -886,7 +886,7 @@ HTML = r"""
 
         .price-compare-animation {
             max-width: 1050px;
-            margin: 0 auto 22px;
+            margin: 0 auto 12px;
             min-height: 96px;
             padding: 15px 20px;
             border-radius: 17px;
@@ -1086,8 +1086,8 @@ HTML = r"""
             border: 1px solid #f0d56a;
             color: #6b5600;
             border-radius: 12px;
-            padding: 12px 14px;
-            font-size: 13px;
+            padding: 11px 15px;
+            font-size: 12px;
             margin-bottom: 22px;
         }
 
