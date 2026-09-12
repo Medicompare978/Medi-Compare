@@ -722,6 +722,365 @@ HTML = r"""
             }
         }
 
+        .search-scan {
+            max-width: 1050px;
+            margin: 0 auto 20px;
+            padding: 16px 20px;
+            border-radius: 16px;
+            border: 1px solid #d9eee6;
+            background: #f7fffc;
+            display: none;
+            align-items: center;
+            gap: 14px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .search-scan.active {
+            display: flex;
+            animation: scanBoxIn 0.35s ease both;
+        }
+
+        .scan-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #e2f7ef;
+            font-size: 23px;
+            flex: 0 0 44px;
+            animation: scanPulse 1.3s ease-in-out infinite;
+        }
+
+        .scan-content {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .scan-title {
+            color: #17634f;
+            font-size: 14px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .scan-subtitle {
+            color: #708079;
+            font-size: 12px;
+            margin-bottom: 9px;
+        }
+
+        .scan-track {
+            height: 5px;
+            width: 100%;
+            border-radius: 99px;
+            background: #dcefe8;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: -25%;
+            top: 0;
+            width: 25%;
+            height: 100%;
+            border-radius: 99px;
+            background: #16a878;
+            animation: scanMove 1.35s ease-in-out infinite;
+        }
+
+        .scan-dots {
+            display: inline-flex;
+            gap: 4px;
+            margin-left: 3px;
+        }
+
+        .scan-dots span {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #16a878;
+            animation: scanDot 1s infinite ease-in-out;
+        }
+
+        .scan-dots span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .scan-dots span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes scanBoxIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes scanPulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+        }
+
+        @keyframes scanMove {
+            0% {
+                left: -25%;
+            }
+            100% {
+                left: 100%;
+            }
+        }
+
+        @keyframes scanDot {
+            0%, 80%, 100% {
+                opacity: 0.25;
+                transform: translateY(0);
+            }
+            40% {
+                opacity: 1;
+                transform: translateY(-2px);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .search-scan {
+                padding: 13px 14px;
+                gap: 10px;
+            }
+
+            .scan-icon {
+                width: 38px;
+                height: 38px;
+                flex-basis: 38px;
+                font-size: 20px;
+            }
+
+            .scan-title {
+                font-size: 13px;
+            }
+
+            .scan-subtitle {
+                font-size: 11px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .scan-icon,
+            .scan-line,
+            .scan-dots span {
+                animation: none !important;
+            }
+        }
+
+        .price-compare-animation {
+            max-width: 1050px;
+            margin: 0 auto 22px;
+            min-height: 96px;
+            padding: 15px 20px;
+            border-radius: 17px;
+            border: 1px solid #e1eee9;
+            background: linear-gradient(135deg, #fbfffd, #f1faf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 5px 18px rgba(17, 88, 67, 0.05);
+        }
+
+        .price-orbit {
+            position: relative;
+            width: 76px;
+            height: 60px;
+            flex: 0 0 76px;
+        }
+
+        .rupee-coin {
+            position: absolute;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 900;
+            background: #e2f7ef;
+            border: 1px solid #c9eadd;
+            color: #14785c;
+            box-shadow: 0 4px 10px rgba(20, 120, 92, 0.10);
+        }
+
+        .rupee-one {
+            left: 0;
+            top: 13px;
+            animation: rupeeFloatOne 2.6s ease-in-out infinite;
+        }
+
+        .rupee-two {
+            right: 0;
+            top: 3px;
+            animation: rupeeFloatTwo 2.6s ease-in-out infinite;
+        }
+
+        .rupee-three {
+            left: 23px;
+            bottom: 0;
+            animation: rupeeFloatThree 2.6s ease-in-out infinite;
+        }
+
+        .price-compare-copy {
+            position: relative;
+            z-index: 2;
+        }
+
+        .price-compare-title {
+            color: #17634f;
+            font-size: 15px;
+            font-weight: 850;
+            margin-bottom: 5px;
+        }
+
+        .price-compare-subtitle {
+            color: #708079;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .price-spark {
+            position: absolute;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            right: -80px;
+            top: -80px;
+            background: rgba(33, 177, 131, 0.07);
+            animation: priceSpark 4s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes rupeeFloatOne {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(-3px, -7px) rotate(-5deg); }
+        }
+
+        @keyframes rupeeFloatTwo {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(3px, 6px) rotate(5deg); }
+        }
+
+        @keyframes rupeeFloatThree {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(0, -6px) rotate(-4deg); }
+        }
+
+        @keyframes priceSpark {
+            0%, 100% { transform: scale(0.9); opacity: 0.55; }
+            50% { transform: scale(1.12); opacity: 1; }
+        }
+
+        @media (max-width: 600px) {
+            .price-compare-animation {
+                min-height: 92px;
+                padding: 13px 14px;
+                gap: 10px;
+            }
+
+            .price-orbit {
+                width: 64px;
+                height: 54px;
+                flex-basis: 64px;
+                transform: scale(0.88);
+            }
+
+            .price-compare-title {
+                font-size: 13px;
+            }
+
+            .price-compare-subtitle {
+                font-size: 11px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .rupee-coin,
+            .price-spark {
+                animation: none !important;
+            }
+        }
+
+        .pharmacy-section {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pharmacy-section::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -35%;
+            width: 35%;
+            height: 2px;
+            background: #20a879;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .pharmacy-section:hover::before {
+            opacity: 1;
+            animation: pharmacySweep 1.1s ease-out;
+        }
+
+        .pharmacy-header h2 {
+            transition: transform 0.25s ease;
+        }
+
+        .pharmacy-section:hover .pharmacy-header h2 {
+            transform: translateX(3px);
+        }
+
+        .pharmacy-section .count {
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .pharmacy-section:hover .count {
+            transform: scale(1.04);
+            box-shadow: 0 3px 10px rgba(23, 99, 79, 0.08);
+        }
+
+        @keyframes pharmacySweep {
+            0% {
+                left: -35%;
+            }
+            100% {
+                left: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pharmacy-section::before {
+                animation: none !important;
+            }
+
+            .pharmacy-section:hover .pharmacy-header h2,
+            .pharmacy-section:hover .count {
+                transform: none;
+            }
+        }
+
         .warning {
             background: #fff8db;
             border: 1px solid #f0d56a;
@@ -1197,6 +1556,27 @@ HTML = r"""
     </span>
 </div>
 
+<div class="search-scan" id="searchScan" aria-live="polite">
+    <div class="scan-icon">🔍</div>
+
+    <div class="scan-content">
+        <div class="scan-title">
+            Checking pharmacy catalogues
+            <span class="scan-dots">
+                <span></span><span></span><span></span>
+            </span>
+        </div>
+
+        <div class="scan-subtitle">
+            Looking for matching medicines and available prices...
+        </div>
+
+        <div class="scan-track">
+            <div class="scan-line"></div>
+        </div>
+    </div>
+</div>
+
 <div class="search-tip">
     💡 Tip: Include the medicine name and strength for more accurate results.
 </div>
@@ -1224,6 +1604,23 @@ HTML = r"""
     <span class="health-tip-text" id="healthTipText">Stay hydrated — drink enough water throughout the day.</span>
 </div>
 
+<div class="price-compare-animation">
+    <div class="price-spark"></div>
+
+    <div class="price-orbit" aria-hidden="true">
+        <div class="rupee-coin rupee-one">₹</div>
+        <div class="rupee-coin rupee-two">₹</div>
+        <div class="rupee-coin rupee-three">₹</div>
+    </div>
+
+    <div class="price-compare-copy">
+        <div class="price-compare-title">Compare prices. Choose smarter. 💚</div>
+        <div class="price-compare-subtitle">
+            Always compare the exact medicine, strength and pack size before choosing a lower-priced option.
+        </div>
+    </div>
+</div>
+
 
 {% if error_message %}
 
@@ -1245,7 +1642,7 @@ HTML = r"""
      APOLLO
      ======================================================== -->
 
-<section class="pharmacy-section">
+<section class="pharmacy-section pharmacy-result-reveal">
 
     <div class="pharmacy-header">
 
@@ -1394,7 +1791,7 @@ HTML = r"""
      MEDPLUS
      ======================================================== -->
 
-<section class="pharmacy-section">
+<section class="pharmacy-section pharmacy-result-reveal">
 
     <div class="pharmacy-header">
 
@@ -1572,7 +1969,7 @@ HTML = r"""
      PHARMEASY
      ======================================================== -->
 
-<section class="pharmacy-section">
+<section class="pharmacy-section pharmacy-result-reveal">
 
     <div class="pharmacy-header">
 
@@ -1788,6 +2185,11 @@ HTML = r"""
         }
 
         searchStatus.classList.add("active");
+
+        const searchScan = document.getElementById("searchScan");
+        if (searchScan) {
+            searchScan.classList.add("active");
+        }
     });
 
     updateClearButton();
