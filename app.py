@@ -330,23 +330,111 @@ HTML = r"""
         }
 
         .header {
-            background: linear-gradient(135deg, #087f5b, #0ca678);
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #087f5b 0%, #0ca678 55%, #12b886 100%);
             color: white;
-            padding: 26px 16px 30px;
+            padding: 38px 16px 55px;
             text-align: center;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+            box-shadow: 0 5px 18px rgba(0,0,0,0.14);
+        }
+
+        .header::before,
+        .header::after {
+            content: "";
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            pointer-events: none;
+        }
+
+        .header::before {
+            width: 220px;
+            height: 220px;
+            left: -90px;
+            top: -120px;
+        }
+
+        .header::after {
+            width: 280px;
+            height: 280px;
+            right: -120px;
+            bottom: -190px;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 2;
+        }
+
+        .logo {
+            font-size: 42px;
+            margin-bottom: 5px;
+            animation: logoFloat 3s ease-in-out infinite;
         }
 
         .header h1 {
             margin: 0;
-            font-size: 32px;
-            font-weight: 800;
+            font-size: 38px;
+            font-weight: 900;
+            letter-spacing: -0.8px;
         }
 
-        .header p {
-            margin: 8px 0 0;
-            opacity: 0.95;
+        .header .tagline {
+            margin: 9px 0 0;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header .subtitle {
+            margin: 7px 0 0;
             font-size: 14px;
+            opacity: 0.92;
+        }
+
+        .floating-pill {
+            position: absolute;
+            font-size: 27px;
+            opacity: 0.7;
+            z-index: 1;
+            animation: pillFloat 4s ease-in-out infinite;
+        }
+
+        .pill-one {
+            left: 13%;
+            top: 38px;
+        }
+
+        .pill-two {
+            right: 14%;
+            top: 75px;
+            animation-delay: 1.2s;
+        }
+
+        .pill-three {
+            left: 24%;
+            bottom: 12px;
+            animation-delay: 2s;
+        }
+
+        @keyframes pillFloat {
+            0%, 100% {
+                transform: translateY(0) rotate(-8deg);
+            }
+
+            50% {
+                transform: translateY(-12px) rotate(8deg);
+            }
+        }
+
+        @keyframes logoFloat {
+            0%, 100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-4px);
+            }
         }
 
         .container {
@@ -355,40 +443,283 @@ HTML = r"""
         }
 
         .search-form {
+            position: relative;
+            z-index: 5;
             display: flex;
             gap: 10px;
-            margin-bottom: 18px;
+            margin: -30px auto 22px;
+            padding: 10px;
+            max-width: 1050px;
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+        }
+
+        .search-wrapper {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .search-wrapper::before {
+            content: "🔍";
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 17px;
+            opacity: 0.65;
+            pointer-events: none;
+            z-index: 2;
         }
 
         .search-form input {
+            width: 100%;
             flex: 1;
             min-width: 0;
-            border: 1px solid #cbd5d1;
-            border-radius: 12px;
-            padding: 14px 15px;
+            border: 2px solid #e4ebe8;
+            border-radius: 13px;
+            padding: 15px 44px 15px 44px;
             font-size: 16px;
             outline: none;
-            background: white;
+            background: #fbfdfc;
+            transition: all 0.25s ease;
         }
 
         .search-form input:focus {
             border-color: #0ca678;
-            box-shadow: 0 0 0 3px rgba(12,166,120,0.12);
+            background: white;
+            box-shadow: 0 0 0 4px rgba(12,166,120,0.10);
+            transform: translateY(-1px);
         }
 
         .search-form button {
             border: 0;
-            border-radius: 12px;
-            padding: 0 22px;
+            border-radius: 13px;
+            padding: 0 27px;
             background: #087f5b;
             color: white;
             font-size: 16px;
-            font-weight: 700;
+            font-weight: 800;
             cursor: pointer;
+            transition: all 0.2s ease;
         }
 
         .search-form button:hover {
             background: #066a4c;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 14px rgba(8,127,91,0.25);
+        }
+
+        .search-form button:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .clear-search {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 30px;
+            border: 0;
+            border-radius: 50%;
+            background: #eef4f1;
+            color: #52615b;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 3;
+        }
+
+        .clear-search:hover {
+            background: #dce9e4;
+            transform: translateY(-50%) scale(1.08);
+        }
+
+        .search-wrapper.has-value .clear-search {
+            display: flex;
+        }
+
+        .search-status {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            max-width: 1050px;
+            margin: 0 auto 20px;
+            padding: 13px 16px;
+            border-radius: 13px;
+            background: #eefaf6;
+            border: 1px solid #ccece1;
+            color: #087f5b;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .search-status.active {
+            display: flex;
+        }
+
+        .loading-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #0ca678;
+            animation: loadingPulse 1s infinite ease-in-out;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.30s;
+        }
+
+        @keyframes loadingPulse {
+            0%, 80%, 100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+
+            40% {
+                opacity: 1;
+                transform: scale(1.15);
+            }
+        }
+
+        .search-tip {
+            max-width: 1050px;
+            margin: -10px auto 20px;
+            padding: 0 4px;
+            color: #708079;
+            font-size: 12px;
+            text-align: left;
+        }
+
+        .health-tips {
+            max-width: 1050px;
+            margin: 16px auto 22px;
+            min-height: 125px;
+            padding: 17px 20px 15px;
+            border-radius: 17px;
+            border: 1px solid #d9eee6;
+            background: linear-gradient(135deg, #f5fffb, #eef9f5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            color: #17634f;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 5px 18px rgba(17, 88, 67, 0.06);
+        }
+
+        .health-tip-icon {
+            font-size: 48px;
+            line-height: 1;
+            width: auto;
+            text-align: center;
+            flex: 0 0 auto;
+            position: relative;
+            z-index: 2;
+            filter: drop-shadow(0 5px 7px rgba(23, 99, 79, 0.14));
+            animation: tipIconBig 2.2s ease-in-out infinite;
+        }
+
+        .health-tip-text {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.1px;
+            text-align: center;
+            line-height: 1.45;
+            position: relative;
+            z-index: 2;
+            animation: tipTextIn 0.55s ease both;
+        }
+
+        .health-tip-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 800;
+            color: #5a8a7b;
+            order: -1;
+            margin: 0 0 2px;
+        }
+
+        .health-tip-glow {
+            position: absolute;
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: rgba(33, 177, 131, 0.08);
+            right: -25px;
+            top: -35px;
+            animation: tipGlow 4s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes tipIconBig {
+            0%, 100% {
+                transform: translateY(0) scale(1) rotate(0deg);
+            }
+            35% {
+                transform: translateY(-8px) scale(1.08) rotate(-4deg);
+            }
+            65% {
+                transform: translateY(-3px) scale(1.03) rotate(3deg);
+            }
+        }
+
+        @keyframes tipTextIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes tipGlow {
+            0%, 100% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.12); opacity: 1; }
+        }
+
+        @media (max-width: 600px) {
+            .health-tips {
+                margin: 14px 0 18px;
+                min-height: 112px;
+                padding: 14px 13px 12px;
+            }
+
+            .health-tip-icon {
+                font-size: 42px;
+            }
+
+            .health-tip-text {
+                font-size: 12px;
+                line-height: 1.4;
+            }
+
+            .health-tip-label {
+                display: none;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .health-tip-icon,
+            .health-tip-text,
+            .health-tip-glow {
+                animation: none !important;
+            }
         }
 
         .warning {
@@ -443,6 +774,52 @@ HTML = r"""
             gap: 15px;
         }
 
+        /* ====================================================
+           STEP 2 - RESULT & CARD ANIMATIONS
+           ==================================================== */
+
+        .search-title {
+            animation: resultTitleIn 0.55s ease both;
+        }
+
+        .pharmacy-section {
+            animation: sectionIn 0.65s ease both;
+        }
+
+        .pharmacy-section:nth-of-type(2) {
+            animation-delay: 0.12s;
+        }
+
+        .pharmacy-section:nth-of-type(3) {
+            animation-delay: 0.24s;
+        }
+
+        .pharmacy-header {
+            position: relative;
+        }
+
+        .pharmacy-header h2 {
+            transition: transform 0.25s ease;
+        }
+
+        .pharmacy-header:hover h2 {
+            transform: translateX(5px);
+        }
+
+        .products .card {
+            opacity: 0;
+            animation: cardIn 0.55s ease forwards;
+        }
+
+        .products .card:nth-child(1) { animation-delay: 0.05s; }
+        .products .card:nth-child(2) { animation-delay: 0.12s; }
+        .products .card:nth-child(3) { animation-delay: 0.19s; }
+        .products .card:nth-child(4) { animation-delay: 0.26s; }
+        .products .card:nth-child(5) { animation-delay: 0.33s; }
+        .products .card:nth-child(6) { animation-delay: 0.40s; }
+        .products .card:nth-child(7) { animation-delay: 0.47s; }
+        .products .card:nth-child(8) { animation-delay: 0.54s; }
+
         .card {
             background: white;
             border: 1px solid #e0e7e4;
@@ -452,6 +829,16 @@ HTML = r"""
             display: flex;
             flex-direction: column;
             min-width: 0;
+            transition:
+                transform 0.28s ease,
+                box-shadow 0.28s ease,
+                border-color 0.28s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-7px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+            border-color: #b8dcd0;
         }
 
         .product-image-box {
@@ -468,6 +855,11 @@ HTML = r"""
             width: 100%;
             height: 100%;
             object-fit: contain;
+            transition: transform 0.35s ease;
+        }
+
+        .card:hover .product-image {
+            transform: scale(1.06);
         }
 
         .image-unavailable {
@@ -520,6 +912,12 @@ HTML = r"""
             font-size: 23px;
             font-weight: 900;
             color: #087f5b;
+            transition: transform 0.25s ease;
+            display: inline-block;
+        }
+
+        .card:hover .price {
+            transform: scale(1.05);
         }
 
         .mrp {
@@ -572,8 +970,21 @@ HTML = r"""
             font-size: 14px;
         }
 
+        .buy-button {
+            transition:
+                transform 0.2s ease,
+                box-shadow 0.2s ease,
+                background 0.2s ease;
+        }
+
         .buy-button:hover {
             background: #066a4c;
+            transform: translateY(-2px);
+            box-shadow: 0 7px 16px rgba(8,127,91,0.24);
+        }
+
+        .buy-button:active {
+            transform: translateY(0) scale(0.98);
         }
 
         .empty {
@@ -583,6 +994,55 @@ HTML = r"""
             padding: 24px;
             color: #65716c;
             text-align: center;
+            animation: emptyIn 0.55s ease both;
+        }
+
+        @keyframes resultTitleIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes sectionIn {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes cardIn {
+            from {
+                opacity: 0;
+                transform: translateY(24px) scale(0.97);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes emptyIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .footer-note {
@@ -593,9 +1053,40 @@ HTML = r"""
             line-height: 1.5;
         }
 
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
         @media (max-width: 600px) {
+            .header {
+                padding: 30px 14px 48px;
+            }
+
             .header h1 {
-                font-size: 27px;
+                font-size: 30px;
+            }
+
+            .header .tagline {
+                font-size: 16px;
+            }
+
+            .header .subtitle {
+                font-size: 13px;
+            }
+
+            .logo {
+                font-size: 36px;
+            }
+
+            .floating-pill {
+                font-size: 22px;
             }
 
             .container {
@@ -609,7 +1100,20 @@ HTML = r"""
 
             .search-form input {
                 font-size: 15px;
-                padding: 13px;
+                padding: 13px 42px 13px 42px;
+            }
+
+            .search-form {
+                flex-direction: column;
+            }
+
+            .search-form button {
+                min-height: 46px;
+            }
+
+            .search-tip {
+                margin-top: -8px;
+                padding: 0 2px;
             }
 
             .search-form button {
@@ -631,28 +1135,71 @@ HTML = r"""
 <body>
 
 <header class="header">
-    <h1>💊 MediCompare</h1>
-    <p>Compare medicine prices across online pharmacies</p>
+
+    <span class="floating-pill pill-one">💊</span>
+    <span class="floating-pill pill-two">💊</span>
+    <span class="floating-pill pill-three">💊</span>
+
+    <div class="header-content">
+
+        <div class="logo">💊</div>
+
+        <h1>MediCompare</h1>
+
+        <div class="tagline">
+            Compare. Save. Choose Better.
+        </div>
+
+        <div class="subtitle">
+            Compare medicine prices across trusted online pharmacies
+        </div>
+
+    </div>
+
 </header>
 
 <main class="container">
 
-<form method="GET" class="search-form">
+<form method="GET" class="search-form" id="searchForm">
 
-    <input
-        type="search"
-        name="medicine"
-        value="{{ searched_medicine }}"
-        placeholder="Search medicine (e.g. Dolo 650)"
-        autocomplete="off"
-        required
-    >
+    <div class="search-wrapper{% if searched_medicine %} has-value{% endif %}" id="searchWrapper">
+
+        <input
+            type="search"
+            name="medicine"
+            id="medicineInput"
+            value="{{ searched_medicine }}"
+            placeholder="Search medicine (e.g. Dolo 650)"
+            autocomplete="off"
+            required
+        >
+
+        <button
+            type="button"
+            class="clear-search"
+            id="clearSearch"
+            aria-label="Clear search"
+        >×</button>
+
+    </div>
 
     <button type="submit">
         Search
     </button>
 
 </form>
+
+<div class="search-status" id="searchStatus" aria-live="polite">
+    <span>🔎</span>
+    <span>Searching pharmacies...</span>
+    <span class="loading-dots">
+        <span></span><span></span><span></span>
+    </span>
+</div>
+
+<div class="search-tip">
+    💡 Tip: Include the medicine name and strength for more accurate results.
+</div>
 
 
 <div class="warning">
@@ -668,6 +1215,13 @@ HTML = r"""
     Prescription medicines should only be used as
     directed by a qualified healthcare professional.
 
+</div>
+
+<div class="health-tips" id="healthTips" aria-live="polite">
+    <div class="health-tip-glow"></div>
+    <span class="health-tip-icon" id="healthTipIcon">💧</span>
+    <span class="health-tip-label">Healthy Habit</span>
+    <span class="health-tip-text" id="healthTipText">Stay hydrated — drink enough water throughout the day.</span>
 </div>
 
 
@@ -1204,6 +1758,72 @@ HTML = r"""
 
 
 </main>
+
+<script>
+    const searchForm = document.getElementById("searchForm");
+    const medicineInput = document.getElementById("medicineInput");
+    const searchWrapper = document.getElementById("searchWrapper");
+    const clearSearch = document.getElementById("clearSearch");
+    const searchStatus = document.getElementById("searchStatus");
+
+    function updateClearButton() {
+        if (medicineInput.value.trim()) {
+            searchWrapper.classList.add("has-value");
+        } else {
+            searchWrapper.classList.remove("has-value");
+        }
+    }
+
+    medicineInput.addEventListener("input", updateClearButton);
+
+    clearSearch.addEventListener("click", function () {
+        medicineInput.value = "";
+        updateClearButton();
+        medicineInput.focus();
+    });
+
+    searchForm.addEventListener("submit", function () {
+        if (!medicineInput.value.trim()) {
+            return;
+        }
+
+        searchStatus.classList.add("active");
+    });
+
+    updateClearButton();
+
+    const healthTips = [
+        ["💧", "Stay hydrated — drink enough water throughout the day."],
+        ["🧼", "Wash your hands before eating and after coming from outside."],
+        ["🥗", "Choose a balanced diet with plenty of fruits and vegetables."],
+        ["😴", "Good sleep supports your body’s natural recovery."],
+        ["🚶", "A little daily movement can help you stay active and healthy."],
+        ["🩺", "Take medicines only as directed by a qualified healthcare professional."]
+    ];
+
+    let healthTipIndex = 0;
+    const healthTipIcon = document.getElementById("healthTipIcon");
+    const healthTipText = document.getElementById("healthTipText");
+
+    function showHealthTip(index) {
+        healthTipText.style.animation = "none";
+        healthTipIcon.style.animation = "none";
+
+        void healthTipText.offsetWidth;
+        void healthTipIcon.offsetWidth;
+
+        healthTipIcon.textContent = healthTips[index][0];
+        healthTipText.textContent = healthTips[index][1];
+
+        healthTipText.style.animation = "tipTextIn 0.55s ease both";
+        healthTipIcon.style.animation = "tipIconBig 2.2s ease-in-out infinite";
+    }
+
+    setInterval(function () {
+        healthTipIndex = (healthTipIndex + 1) % healthTips.length;
+        showHealthTip(healthTipIndex);
+    }, 4500);
+</script>
 
 </body>
 </html>
