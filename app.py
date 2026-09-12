@@ -3,7 +3,6 @@ import requests
 import os
 from dotenv import load_dotenv
 
-# Load PARSE_API_KEY from .env
 load_dotenv(override=True)
 
 API_KEY = os.getenv("PARSE_API_KEY")
@@ -18,14 +17,67 @@ app = Flask(__name__)
 # API CONFIG
 # ============================================================
 
-# IMPORTANT:
-# This is the PRIVATE Apollo fork that contains image_url.
 APOLLO_SCRAPER_ID = "30394a9d-d3c7-4bd6-803f-34561279285d"
-
-# MedPlus canonical scraper
 MEDPLUS_SCRAPER_ID = "8285ba5b-0a0a-4525-8706-4fed1d6fc5cc"
+PHARMEASY_SCRAPER_ID = "e7c250a1-5824-4027-9f84-c63d92aa5889"
 
 PARSE_BASE_URL = "https://api.parse.bot/scraper"
+
+
+# ============================================================
+# COMMON HELPERS
+# ============================================================
+
+def get_products(result):
+    if not isinstance(result, dict):
+        return []
+
+    data = result.get("data", result)
+
+    if isinstance(data, dict):
+        products = data.get("products")
+        if isinstance(products, list):
+            return products
+
+        results = data.get("results")
+        if isinstance(results, list):
+            return results
+
+    if isinstance(data, list):
+        return data
+
+    return []
+
+
+def first_value(product, *keys):
+    if not isinstance(product, dict):
+        return None
+
+    for key in keys:
+        value = product.get(key)
+        if value is not None and value != "":
+            return value
+
+    return None
+
+
+def to_float(value, default=None):
+    try:
+        if value is None or value == "":
+            return default
+
+        if isinstance(value, str):
+            value = (
+                value.replace("₹", "")
+                .replace(",", "")
+                .replace("INR", "")
+                .strip()
+            )
+
+        return float(value)
+
+    except (TypeError, ValueError):
+        return default
 
 
 # ============================================================
@@ -33,10 +85,7 @@ PARSE_BASE_URL = "https://api.parse.bot/scraper"
 # ============================================================
 
 def search_apollo(query, pincode="110001"):
-    url = (
-        f"{PARSE_BASE_URL}/"
-        f"{APOLLO_SCRAPER_ID}/search_medicines"
-    )
+    url = f"{PARSE_BASE_URL}/{APOLLO_SCRAPER_ID}/search_medicines"
 
     headers = {
         "X-API-Key": API_KEY
@@ -68,9 +117,7 @@ def search_apollo(query, pincode="110001"):
 
     except requests.RequestException as e:
         print("Apollo exception:", e)
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
@@ -78,10 +125,7 @@ def search_apollo(query, pincode="110001"):
 # ============================================================
 
 def search_medplus(query):
-    url = (
-        f"{PARSE_BASE_URL}/"
-        f"{MEDPLUS_SCRAPER_ID}/search_medicines"
-    )
+    url = f"{PARSE_BASE_URL}/{MEDPLUS_SCRAPER_ID}/search_medicines"
 
     headers = {
         "X-API-Key": API_KEY
@@ -113,9 +157,151 @@ def search_medplus(query):
 
     except requests.RequestException as e:
         print("MedPlus exception:", e)
+        return {"error": str(e)}
+
+
+# ============================================================
+# PHARMEASY SEARCH
+# ============================================================
+
+def search_pharmeasy(query):
+    url = f"{PARSE_BASE_URL}/{PHARMEASY_SCRAPER_ID}/search_medicines"
+
+    headers = {
+        "X-API-Key": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "page": 1,
+        "query": query
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+
+        print("PharmEasy HTTP status:", response.status_code)
+
+        if response.status_code == 200:
+            return response.json()
+
+        print("PharmEasy error:", response.text)
         return {
-            "error": str(e)
+            "error": response.text,
+            "status_code": response.status_code
         }
+
+    except requests.RequestException as e:
+        print("PharmEasy exception:", e)
+        return {"error": str(e)}
+
+
+# ============================================================
+# PHARMEASY NORMALIZATION
+# ============================================================
+
+def normalize_pharmeasy_products(products):
+    normalized = []
+
+    for product in products:
+        price = first_value(
+            product,
+            "price",
+            "selling_price",
+            "discounted_price",
+            "final_price",
+            "product_price",
+            "sale_price"
+        )
+
+        mrp = first_value(
+            product,
+            "mrp",
+            "MRP",
+            "mrp_price",
+            "maximum_retail_price"
+        )
+
+        prescription = first_value(
+            product,
+            "is_prescription_required",
+            "prescription_required",
+            "requires_prescription",
+            "prescription"
+        )
+
+        availability = first_value(
+            product,
+            "availability",
+            "stock_status",
+            "in_stock"
+        )
+
+        normalized.append({
+            "name": first_value(
+                product,
+                "product_name",
+                "name",
+                "medicine_name",
+                "title"
+            ) or "Unnamed medicine",
+
+            "manufacturer": first_value(
+                product,
+                "manufacturer",
+                "manufacturer_name",
+                "brand"
+            ),
+
+            "pack_size": first_value(
+                product,
+                "pack_size",
+                "pack",
+                "quantity",
+                "packaging"
+            ),
+
+            "composition": first_value(
+                product,
+                "composition",
+                "salt",
+                "ingredients"
+            ),
+
+            "price": to_float(price, 0),
+            "mrp": to_float(mrp),
+
+            "discount_percentage": first_value(
+                product,
+                "discount_percentage",
+                "discount",
+                "discount_percent"
+            ),
+
+            "availability": availability,
+            "is_prescription_required": bool(prescription),
+
+            "product_url": first_value(
+                product,
+                "product_url",
+                "url",
+                "link"
+            ),
+
+            "image_url": first_value(
+                product,
+                "image_url",
+                "image",
+                "imageUrl"
+            )
+        })
+
+    return normalized
 
 
 # ============================================================
@@ -127,10 +313,7 @@ HTML = r"""
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>MediCompare</title>
 
@@ -328,6 +511,7 @@ HTML = r"""
             display: flex;
             align-items: baseline;
             gap: 8px;
+            flex-wrap: wrap;
             margin-top: auto;
             padding-top: 8px;
         }
@@ -453,277 +637,571 @@ HTML = r"""
 
 <main class="container">
 
-    <form method="GET" class="search-form">
-        <input
-            type="search"
-            name="medicine"
-            value="{{ searched_medicine }}"
-            placeholder="Search medicine (e.g. Dolo 650)"
-            autocomplete="off"
-            required
-        >
-        <button type="submit">Search</button>
-    </form>
+<form method="GET" class="search-form">
 
-    <div class="warning">
-        ⚠️ <strong>Important:</strong>
-        MediCompare is a price/catalogue comparison tool, not medical advice.
-        Check the exact medicine name, strength, composition and pack size before buying.
-        Prescription medicines should only be used as directed by a qualified healthcare professional.
+    <input
+        type="search"
+        name="medicine"
+        value="{{ searched_medicine }}"
+        placeholder="Search medicine (e.g. Dolo 650)"
+        autocomplete="off"
+        required
+    >
+
+    <button type="submit">
+        Search
+    </button>
+
+</form>
+
+
+<div class="warning">
+
+    ⚠️ <strong>Important:</strong>
+
+    MediCompare is a price/catalogue comparison tool,
+    not medical advice.
+
+    Check the exact medicine name, strength,
+    composition and pack size before buying.
+
+    Prescription medicines should only be used as
+    directed by a qualified healthcare professional.
+
+</div>
+
+
+{% if error_message %}
+
+<div class="error">
+    {{ error_message }}
+</div>
+
+{% endif %}
+
+
+{% if searched_medicine %}
+
+<h2 class="search-title">
+    Results for "{{ searched_medicine }}"
+</h2>
+
+
+<!-- ========================================================
+     APOLLO
+     ======================================================== -->
+
+<section class="pharmacy-section">
+
+    <div class="pharmacy-header">
+
+        <h2>🏥 Apollo Pharmacy</h2>
+
+        <span class="count">
+            {{ apollo_products|length }} result(s)
+        </span>
+
     </div>
 
-    {% if error_message %}
-        <div class="error">{{ error_message }}</div>
-    {% endif %}
 
-    {% if searched_medicine %}
-        <h2 class="search-title">
-            Results for "{{ searched_medicine }}"
-        </h2>
+    {% if apollo_products %}
 
-        <!-- ====================================================
-             APOLLO PHARMACY
-             ==================================================== -->
-        <section class="pharmacy-section">
-            <div class="pharmacy-header">
-                <h2>🏥 Apollo Pharmacy</h2>
-                <span class="count">
-                    {{ apollo_products|length }} result(s)
-                </span>
+    <div class="products">
+
+        {% for product in apollo_products %}
+
+        <article class="card">
+
+            {% if product.image_url %}
+
+            <div class="product-image-box">
+
+                <img
+                    src="{{ product.image_url }}"
+                    alt="{{ product.name }}"
+                    class="product-image"
+                    loading="lazy"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                >
+
+                <div
+                    class="image-unavailable"
+                    style="display:none;"
+                >
+                    Image unavailable
+                </div>
+
             </div>
 
-            {% if apollo_products %}
-                <div class="products">
-
-                    {% for product in apollo_products %}
-                        <article class="card">
-
-                            {% if product.image_url %}
-                                <div class="product-image-box">
-                                    <img
-                                        src="{{ product.image_url }}"
-                                        alt="{{ product.name }}"
-                                        class="product-image"
-                                        loading="lazy"
-                                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                                    >
-                                    <div
-                                        class="image-unavailable"
-                                        style="display:none;"
-                                    >
-                                        Image unavailable
-                                    </div>
-                                </div>
-                            {% endif %}
-
-                            <div class="card-body">
-
-                                <div class="product-name">
-                                    {{ product.name or "Unnamed medicine" }}
-                                </div>
-
-                                {% if product.manufacturer %}
-                                    <div class="manufacturer">
-                                        Manufacturer: {{ product.manufacturer }}
-                                    </div>
-                                {% endif %}
-
-                                <div class="meta">
-                                    {% if product.pack_size %}
-                                        📦 Pack: {{ product.pack_size }}<br>
-                                    {% endif %}
-
-                                    {% if product.tags %}
-                                        🧪 {{ product.tags|join(", ") }}<br>
-                                    {% endif %}
-
-                                    {% if product.delivery_time %}
-                                        🚚 {{ product.delivery_time }}
-                                    {% endif %}
-                                </div>
-
-                                <div class="price-row">
-                                    <span class="price">
-                                        ₹{{ "%.2f"|format(product.price|float) }}
-                                    </span>
-
-                                    {% if product.mrp and product.mrp|float > product.price|float %}
-                                        <span class="mrp">
-                                            ₹{{ "%.2f"|format(product.mrp|float) }}
-                                        </span>
-                                    {% endif %}
-
-                                    {% if product.discount_percentage %}
-                                        <span class="discount">
-                                            {{ product.discount_percentage }}% OFF
-                                        </span>
-                                    {% endif %}
-                                </div>
-
-                                {% if product.is_prescription_required %}
-                                    <span class="badge rx">
-                                        Prescription required
-                                    </span>
-                                {% endif %}
-
-                                {% if product.availability %}
-                                    {% if "in-stock" in product.availability|lower %}
-                                        <span class="badge stock">
-                                            {{ product.availability }}
-                                        </span>
-                                    {% else %}
-                                        <span class="badge out">
-                                            {{ product.availability }}
-                                        </span>
-                                    {% endif %}
-                                {% endif %}
-
-                            </div>
-                        </article>
-                    {% endfor %}
-
-                </div>
-            {% else %}
-                <div class="empty">
-                    No Apollo results found for this search.
-                </div>
             {% endif %}
-        </section>
 
 
-        <!-- ====================================================
-             MEDPLUS
-             ==================================================== -->
-        <section class="pharmacy-section">
-            <div class="pharmacy-header">
-                <h2>💚 MedPlus</h2>
-                <span class="count">
-                    {{ medplus_products|length }} result(s)
+            <div class="card-body">
+
+                <div class="product-name">
+                    {{ product.name or "Unnamed medicine" }}
+                </div>
+
+
+                {% if product.manufacturer %}
+
+                <div class="manufacturer">
+                    Manufacturer:
+                    {{ product.manufacturer }}
+                </div>
+
+                {% endif %}
+
+
+                <div class="meta">
+
+                    {% if product.pack_size %}
+                        📦 Pack: {{ product.pack_size }}<br>
+                    {% endif %}
+
+                    {% if product.tags %}
+                        🧪 {{ product.tags|join(", ") }}<br>
+                    {% endif %}
+
+                    {% if product.delivery_time %}
+                        🚚 {{ product.delivery_time }}
+                    {% endif %}
+
+                </div>
+
+
+                <div class="price-row">
+
+                    <span class="price">
+                        ₹{{ "%.2f"|format(product.price|float) }}
+                    </span>
+
+
+                    {% if product.mrp
+                          and product.mrp|float >
+                              product.price|float %}
+
+                    <span class="mrp">
+                        ₹{{ "%.2f"|format(product.mrp|float) }}
+                    </span>
+
+                    {% endif %}
+
+
+                    {% if product.discount_percentage %}
+
+                    <span class="discount">
+                        {{ product.discount_percentage }}% OFF
+                    </span>
+
+                    {% endif %}
+
+                </div>
+
+
+                {% if product.is_prescription_required %}
+
+                <span class="badge rx">
+                    Prescription required
                 </span>
+
+                {% endif %}
+
+
+                {% if product.availability %}
+
+                <span class="badge stock">
+                    {{ product.availability }}
+                </span>
+
+                {% endif %}
+
             </div>
 
-            {% if medplus_products %}
-                <div class="products">
+        </article>
 
-                    {% for product in medplus_products %}
-                        <article class="card">
+        {% endfor %}
 
-                            {% if product.image_url %}
-                                <div class="product-image-box">
-                                    <img
-                                        src="{{ product.image_url }}"
-                                        alt="{{ product.product_name }}"
-                                        class="product-image"
-                                        loading="lazy"
-                                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                                    >
-                                    <div
-                                        class="image-unavailable"
-                                        style="display:none;"
-                                    >
-                                        Image unavailable
-                                    </div>
-                                </div>
-                            {% endif %}
+    </div>
 
-                            <div class="card-body">
-
-                                <div class="product-name">
-                                    {{ product.product_name or "Unnamed medicine" }}
-                                </div>
-
-                                {% if product.manufacturer %}
-                                    <div class="manufacturer">
-                                        Manufacturer: {{ product.manufacturer }}
-                                    </div>
-                                {% endif %}
-
-                                <div class="meta">
-                                    {% if product.pack_size %}
-                                        📦 Pack: {{ product.pack_size }}<br>
-                                    {% endif %}
-
-                                    {% if product.composition %}
-                                        🧪 {{ product.composition }}<br>
-                                    {% endif %}
-
-                                    {% if product.is_in_stock is defined %}
-                                        {% if product.is_in_stock %}
-                                            🟢 In stock
-                                        {% else %}
-                                            🔴 Out of stock
-                                        {% endif %}
-                                    {% endif %}
-                                </div>
-
-                                <div class="price-row">
-                                    {% if product.price is defined and product.price is not none %}
-                                        <span class="price">
-                                            ₹{{ "%.2f"|format(product.price|float) }}
-                                        </span>
-                                    {% elif product.regular_price is defined and product.regular_price is not none %}
-                                        <span class="price">
-                                            ₹{{ "%.2f"|format(product.regular_price|float) }}
-                                        </span>
-                                    {% elif product.mrp is defined and product.mrp is not none %}
-                                        <span class="price">
-                                            ₹{{ "%.2f"|format(product.mrp|float) }}
-                                        </span>
-                                    {% endif %}
-
-                                    {% if product.mrp is defined and product.mrp is not none %}
-                                        <span class="mrp">
-                                            MRP ₹{{ "%.2f"|format(product.mrp|float) }}
-                                        </span>
-                                    {% endif %}
-
-                                    {% if product.discount_percentage %}
-                                        <span class="discount">
-                                            {{ product.discount_percentage }}% OFF
-                                        </span>
-                                    {% endif %}
-                                </div>
-
-                                {% if product.is_prescription_required %}
-                                    <span class="badge rx">
-                                        Prescription required
-                                    </span>
-                                {% endif %}
-
-                                {% if product.product_url %}
-                                    <a
-                                        href="{{ product.product_url }}"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="buy-button"
-                                    >
-                                        Buy on MedPlus ↗
-                                    </a>
-                                {% endif %}
-
-                            </div>
-                        </article>
-                    {% endfor %}
-
-                </div>
-            {% else %}
-                <div class="empty">
-                    No MedPlus results found for this search.
-                </div>
-            {% endif %}
-        </section>
 
     {% else %}
-        <div class="empty">
-            Search for a medicine to compare available catalogue results.
-        </div>
+
+    <div class="empty">
+        No Apollo results found for this search.
+    </div>
+
     {% endif %}
 
-    <div class="footer-note">
-        Prices and availability can change. Always verify the final price,
-        stock status, exact strength and pack size on the pharmacy website
-        before purchasing.
+</section>
+
+
+<!-- ========================================================
+     MEDPLUS
+     ======================================================== -->
+
+<section class="pharmacy-section">
+
+    <div class="pharmacy-header">
+
+        <h2>💚 MedPlus</h2>
+
+        <span class="count">
+            {{ medplus_products|length }} result(s)
+        </span>
+
     </div>
+
+
+    {% if medplus_products %}
+
+    <div class="products">
+
+        {% for product in medplus_products %}
+
+        <article class="card">
+
+            {% if product.image_url %}
+
+            <div class="product-image-box">
+
+                <img
+                    src="{{ product.image_url }}"
+                    alt="{{ product.product_name }}"
+                    class="product-image"
+                    loading="lazy"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                >
+
+                <div
+                    class="image-unavailable"
+                    style="display:none;"
+                >
+                    Image unavailable
+                </div>
+
+            </div>
+
+            {% endif %}
+
+
+            <div class="card-body">
+
+                <div class="product-name">
+                    {{ product.product_name or "Unnamed medicine" }}
+                </div>
+
+
+                {% if product.manufacturer %}
+
+                <div class="manufacturer">
+                    Manufacturer:
+                    {{ product.manufacturer }}
+                </div>
+
+                {% endif %}
+
+
+                <div class="meta">
+
+                    {% if product.pack_size %}
+                        📦 Pack: {{ product.pack_size }}<br>
+                    {% endif %}
+
+                    {% if product.composition %}
+                        🧪 {{ product.composition }}<br>
+                    {% endif %}
+
+                    {% if product.is_in_stock is defined %}
+
+                        {% if product.is_in_stock %}
+                            🟢 In stock
+                        {% else %}
+                            🔴 Out of stock
+                        {% endif %}
+
+                    {% endif %}
+
+                </div>
+
+
+                <div class="price-row">
+
+                    {% if product.price is defined
+                          and product.price is not none %}
+
+                    <span class="price">
+                        ₹{{ "%.2f"|format(product.price|float) }}
+                    </span>
+
+                    {% elif product.regular_price is defined
+                            and product.regular_price is not none %}
+
+                    <span class="price">
+                        ₹{{ "%.2f"|format(product.regular_price|float) }}
+                    </span>
+
+                    {% elif product.mrp is defined
+                            and product.mrp is not none %}
+
+                    <span class="price">
+                        ₹{{ "%.2f"|format(product.mrp|float) }}
+                    </span>
+
+                    {% endif %}
+
+
+                    {% if product.mrp is defined
+                          and product.mrp is not none %}
+
+                    <span class="mrp">
+                        MRP ₹{{ "%.2f"|format(product.mrp|float) }}
+                    </span>
+
+                    {% endif %}
+
+
+                    {% if product.discount_percentage %}
+
+                    <span class="discount">
+                        {{ product.discount_percentage }}% OFF
+                    </span>
+
+                    {% endif %}
+
+                </div>
+
+
+                {% if product.is_prescription_required %}
+
+                <span class="badge rx">
+                    Prescription required
+                </span>
+
+                {% endif %}
+
+
+                {% if product.product_url %}
+
+                <a
+                    href="{{ product.product_url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="buy-button"
+                >
+                    Buy on MedPlus ↗
+                </a>
+
+                {% endif %}
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    </div>
+
+
+    {% else %}
+
+    <div class="empty">
+        No MedPlus results found for this search.
+    </div>
+
+    {% endif %}
+
+</section>
+
+
+<!-- ========================================================
+     PHARMEASY
+     ======================================================== -->
+
+<section class="pharmacy-section">
+
+    <div class="pharmacy-header">
+
+        <h2>💙 PharmEasy</h2>
+
+        <span class="count">
+            {{ pharmeasy_products|length }} result(s)
+        </span>
+
+    </div>
+
+
+    {% if pharmeasy_products %}
+
+    <div class="products">
+
+        {% for product in pharmeasy_products %}
+
+        <article class="card">
+
+            {% if product.image_url %}
+
+            <div class="product-image-box">
+
+                <img
+                    src="{{ product.image_url }}"
+                    alt="{{ product.name }}"
+                    class="product-image"
+                    loading="lazy"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                >
+
+                <div
+                    class="image-unavailable"
+                    style="display:none;"
+                >
+                    Image unavailable
+                </div>
+
+            </div>
+
+            {% endif %}
+
+
+            <div class="card-body">
+
+                <div class="product-name">
+                    {{ product.name or "Unnamed medicine" }}
+                </div>
+
+
+                {% if product.manufacturer %}
+
+                <div class="manufacturer">
+                    Manufacturer:
+                    {{ product.manufacturer }}
+                </div>
+
+                {% endif %}
+
+
+                <div class="meta">
+
+                    {% if product.pack_size %}
+                        📦 Pack: {{ product.pack_size }}<br>
+                    {% endif %}
+
+                    {% if product.composition %}
+                        🧪 {{ product.composition }}<br>
+                    {% endif %}
+
+                    {% if product.availability is not none %}
+
+                        {% if product.availability is boolean %}
+
+                            {% if product.availability %}
+                                🟢 In stock
+                            {% else %}
+                                🔴 Out of stock
+                            {% endif %}
+
+                        {% else %}
+
+                            🚚 {{ product.availability }}
+
+                        {% endif %}
+
+                    {% endif %}
+
+                </div>
+
+
+                <div class="price-row">
+
+                    <span class="price">
+                        ₹{{ "%.2f"|format(product.price|float) }}
+                    </span>
+
+
+                    {% if product.mrp
+                          and product.mrp|float >
+                              product.price|float %}
+
+                    <span class="mrp">
+                        MRP ₹{{ "%.2f"|format(product.mrp|float) }}
+                    </span>
+
+                    {% endif %}
+
+
+                    {% if product.discount_percentage %}
+
+                    <span class="discount">
+                        {{ product.discount_percentage }}% OFF
+                    </span>
+
+                    {% endif %}
+
+                </div>
+
+
+                {% if product.is_prescription_required %}
+
+                <span class="badge rx">
+                    Prescription required
+                </span>
+
+                {% endif %}
+
+
+                {% if product.product_url %}
+
+                <a
+                    href="{{ product.product_url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="buy-button"
+                >
+                    Buy on PharmEasy ↗
+                </a>
+
+                {% endif %}
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    </div>
+
+
+    {% else %}
+
+    <div class="empty">
+        No PharmEasy results found for this search.
+    </div>
+
+    {% endif %}
+
+</section>
+
+
+{% else %}
+
+<div class="empty">
+    Search for a medicine to compare available
+    catalogue results.
+</div>
+
+{% endif %}
+
+
+<div class="footer-note">
+
+    Prices and availability can change.
+
+    Always verify the final price, stock status,
+    exact strength and pack size on the pharmacy
+    website before purchasing.
+
+</div>
+
 
 </main>
 
@@ -738,56 +1216,141 @@ HTML = r"""
 
 @app.route("/", methods=["GET"])
 def home():
-    # GET is intentional.
-    # It prevents browser "Confirm Form Resubmission / ERR_CACHE_MISS"
-    # after refresh or back navigation.
 
-    searched_medicine = request.args.get("medicine", "").strip()
+    searched_medicine = request.args.get(
+        "medicine",
+        ""
+    ).strip()
 
     apollo_products = []
     medplus_products = []
+    pharmeasy_products = []
+
     error_message = ""
 
     if searched_medicine:
+
         if not API_KEY:
+
             error_message = (
                 "PARSE_API_KEY was not found. "
                 "Check your .env file."
             )
+
         else:
-            apollo_result = search_apollo(searched_medicine)
+
+            # ---------------- Apollo ----------------
+
+            apollo_result = search_apollo(
+                searched_medicine
+            )
 
             if (
                 isinstance(apollo_result, dict)
-                and apollo_result.get("status") == "success"
+                and apollo_result.get("status")
+                == "success"
             ):
-                data = apollo_result.get("data", {})
-                apollo_products = data.get("products", []) or []
-            elif isinstance(apollo_result, dict) and apollo_result.get("error"):
-                print("Apollo result error:", apollo_result["error"])
 
-            medplus_result = search_medplus(searched_medicine)
+                apollo_products = get_products(
+                    apollo_result
+                )
+
+            elif (
+                isinstance(apollo_result, dict)
+                and apollo_result.get("error")
+            ):
+
+                print(
+                    "Apollo result error:",
+                    apollo_result["error"]
+                )
+
+
+            # ---------------- MedPlus ----------------
+
+            medplus_result = search_medplus(
+                searched_medicine
+            )
 
             if (
                 isinstance(medplus_result, dict)
-                and medplus_result.get("status") == "success"
+                and medplus_result.get("status")
+                == "success"
             ):
-                data = medplus_result.get("data", {})
-                medplus_products = data.get("products", []) or []
-            elif isinstance(medplus_result, dict) and medplus_result.get("error"):
-                print("MedPlus result error:", medplus_result["error"])
 
-            if not apollo_products and not medplus_products:
-                error_message = (
-                    "No results were returned. "
-                    "Try a more specific medicine name or strength."
+                medplus_products = get_products(
+                    medplus_result
                 )
 
+            elif (
+                isinstance(medplus_result, dict)
+                and medplus_result.get("error")
+            ):
+
+                print(
+                    "MedPlus result error:",
+                    medplus_result["error"]
+                )
+
+
+            # ---------------- PharmEasy ----------------
+
+            pharmeasy_result = search_pharmeasy(
+                searched_medicine
+            )
+
+            if (
+                isinstance(pharmeasy_result, dict)
+                and pharmeasy_result.get("status")
+                == "success"
+            ):
+
+                raw_products = get_products(
+                    pharmeasy_result
+                )
+
+                pharmeasy_products = (
+                    normalize_pharmeasy_products(
+                        raw_products
+                    )
+                )
+
+            elif (
+                isinstance(pharmeasy_result, dict)
+                and pharmeasy_result.get("error")
+            ):
+
+                print(
+                    "PharmEasy result error:",
+                    pharmeasy_result["error"]
+                )
+
+
+            if (
+                not apollo_products
+                and not medplus_products
+                and not pharmeasy_products
+            ):
+
+                error_message = (
+                    "No results were returned. "
+                    "Try a more specific medicine "
+                    "name or strength."
+                )
+
+
     return render_template_string(
+
         HTML,
+
         searched_medicine=searched_medicine,
+
         apollo_products=apollo_products,
+
         medplus_products=medplus_products,
+
+        pharmeasy_products=pharmeasy_products,
+
         error_message=error_message
     )
 
@@ -797,6 +1360,7 @@ def home():
 # ============================================================
 
 if __name__ == "__main__":
+
     print()
     print("MediCompare is starting...")
     print("Laptop: http://127.0.0.1:5000")
