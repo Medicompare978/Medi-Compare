@@ -3432,153 +3432,233 @@ HTML = r"""
     let lastMotionAt = 0;
 
     // Walking detector.
-    const GRAVITY_ALPHA = 0.88;
-    const SIGNAL_ALPHA = 0.45;
-    const NOISE_ALPHA = 0.025;
+    // ============================================================
+    // STEP COUNTER — V10
+    // ============================================================
+    // Based directly on V9.
+    //
+    // Real test that drives this version:
+    // Reference pedometer: 758 - 235 = 523
+    // MediCompare V9: 181
+    //
+    // V10 keeps V9's strong seated-movement rejection, but improves
+    // walking sensitivity with:
+    //   - conservative startup confirmation
+    //   - broader cadence tolerance
+    //   - active-walking hysteresis
+    //   - duplicate-peak suppression
+    //   - one-step recovery for a near-2-cycle gap
+    //
+    // We do NOT simply lower the startup threshold, because that would
+    // risk bringing back V7's seated phone-movement false positives.
 
-    // Conservative while starting; more sensitive after walking is confirmed.
-    const MIN_DYNAMIC_PEAK = 0.22;
-    const PEAK_MARGIN = 0.16;
-    const CONFIRMED_MIN_DYNAMIC_PEAK = 0.13;
-    const CONFIRMED_PEAK_MARGIN = 0.10;
+    const GRAVITY_ALPHA = 0.88;
+    const SIGNAL_ALPHA = 0.52;
+    const NOISE_ALPHA = 0.020;
+
+    const START_MIN_PEAK = 0.22;
+    const START_PEAK_MARGIN = 0.16;
+
+    // More sensitive after a genuine walking rhythm is confirmed.
+    const WALK_MIN_PEAK = 0.10;
+    const WALK_PEAK_MARGIN = 0.075;
 
     const STEP_MIN_INTERVAL_MS = 300;
-    const STEP_MAX_INTERVAL_MS = 1450;
+    const STEP_MAX_INTERVAL_MS = 1500;
+
     const WALK_CONFIRM_CANDIDATES = 4;
-    const WALK_INTERVAL_TOLERANCE = 0.32;
-    const WALK_AMPLITUDE_TOLERANCE = 0.65;
-    const WALK_START_TIMEOUT_MS = 2000;
-    const WALK_BREAK_TIMEOUT_MS = 1600;
+    const WALK_INTERVAL_TOLERANCE = 0.38;
+    const WALK_AMPLITUDE_TOLERANCE = 0.72;
 
-    const DUPLICATE_INTERVAL_FACTOR = 0.48;
+    const WALK_START_TIMEOUT_MS = 2200;
+    const WALK_BREAK_TIMEOUT_MS = 1800;
 
-    let candidateTimes = [];
-    let candidateAmplitudes = [];
-    let confirmedWalking = false;
+    const DUPLICATE_INTERVAL_FACTOR = 0.42;
+
+    let motionStarted = false;
+    let motionListener = null;
+
+    let gravity = { x: 0, y: 0, z: 0 };
+    let filteredSignal = 0;
+    let previousSignal = 0;
+    let signalVelocity = 0;
+    let noiseFloor = 0.08;
+    let signalPeakReference = 0;
+
     let lastCandidateTime = 0;
     let lastConfirmedTime = 0;
 
-    function updateStepDisplay(force = false) {
-        if (!force && displayedStepCount === stepCount) return;
-        displayedStepCount = stepCount;
-        stepCountElement.textContent = displayedStepCount.toLocaleString();
-        const progress = Math.min(100, (displayedStepCount / STEP_GOAL) * 100);
-        stepProgressBar.style.width = progress + "%";
-    }
+    let candidateTimes = [];
+    let candidateAmplitudes = [];
 
-    function saveSteps() {
-        localStorage.setItem(stepStorageKey, String(stepCount));
-    }
+    let confirmedWalking = false;
 
-    function addConfirmedSteps(numberOfSteps) {
-        if (numberOfSteps <= 0) return;
-        stepCount += numberOfSteps;
-        saveSteps();
-        // Keep the value available immediately; the visible UI timer handles
-        // the normal refresh cadence.
-    }
+    function chooseAcceleration(event) {
+        const linear = event.acceleration;
 
-    function startUiUpdateTimer() {
-        stopUiUpdateTimer();
-        uiUpdateTimer = setInterval(function () {
-            updateStepDisplay(true);
-        }, 1500);
-    }
+        if (linear &&
+            Number.isFinite(linear.x) &&
+            Number.isFinite(linear.y) &&
+            Number.isFinite(linear.z)) {
 
-    function stopUiUpdateTimer() {
-        if (uiUpdateTimer) {
-            clearInterval(uiUpdateTimer);
-            uiUpdateTimer = null;
+            const magnitude = Math.sqrt(
+                linear.x * linear.x +
+                linear.y * linear.y +
+                linear.z * linear.z
+            );
+
+            if (Number.isFinite(magnitude)) return magnitude;
         }
+
+        const including = event.accelerationIncludingGravity;
+
+        if (including &&
+            Number.isFinite(including.x) &&
+            Number.isFinite(including.y) &&
+            Number.isFinite(including.z)) {
+
+            gravity.x =
+                gravity.x * GRAVITY_ALPHA +
+                including.x * (1 - GRAVITY_ALPHA);
+
+            gravity.y =
+                gravity.y * GRAVITY_ALPHA +
+                including.y * (1 - GRAVITY_ALPHA);
+
+            gravity.z =
+                gravity.z * GRAVITY_ALPHA +
+                including.z * (1 - GRAVITY_ALPHA);
+
+            const x = including.x - gravity.x;
+            const y = including.y - gravity.y;
+            const z = including.z - gravity.z;
+
+            return Math.sqrt(x * x + y * y + z * z);
+        }
+
+        return null;
     }
 
-    function resetWalkingDetector() {
+    function resetWalkingState() {
         candidateTimes = [];
         candidateAmplitudes = [];
-        confirmedWalking = false;
         lastCandidateTime = 0;
         lastConfirmedTime = 0;
+        confirmedWalking = false;
         signalPeakReference = 0;
     }
 
-    function cadenceIsRegular(times) {
-        if (times.length < 3) return false;
+    function intervalsFrom(times) {
         const intervals = [];
         for (let i = 1; i < times.length; i++) {
             intervals.push(times[i] - times[i - 1]);
         }
-        const recent = intervals.slice(-2);
-        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-        if (avg < STEP_MIN_INTERVAL_MS || avg > STEP_MAX_INTERVAL_MS) return false;
-        const deviation = Math.max(
-            ...recent.map(value => Math.abs(value - avg) / avg)
-        );
-        return deviation <= WALK_INTERVAL_TOLERANCE;
+        return intervals;
     }
 
-    function amplitudesAreWalkingLike(amplitudes) {
-        if (amplitudes.length < 3) return false;
-        const recent = amplitudes.slice(-3);
-        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-        if (avg <= 0) return false;
-        const deviation = Math.max(
-            ...recent.map(value => Math.abs(value - avg) / avg)
+    function cadenceIsRegular(times) {
+        if (!times || times.length < 4) return false;
+
+        const intervals = intervalsFrom(times);
+        if (intervals.length < 3) return false;
+
+        const sorted = [...intervals].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+
+        if (!Number.isFinite(median) ||
+            median < STEP_MIN_INTERVAL_MS ||
+            median > STEP_MAX_INTERVAL_MS) {
+            return false;
+        }
+
+        return intervals.every(interval =>
+            Math.abs(interval - median) / median <= WALK_INTERVAL_TOLERANCE
         );
-        return deviation <= WALK_AMPLITUDE_TOLERANCE;
+    }
+
+    function amplitudesAreWalkingLike(values) {
+        if (!values || values.length < 4) return false;
+
+        const average =
+            values.reduce((sum, value) => sum + value, 0) / values.length;
+
+        if (!Number.isFinite(average) || average <= 0) return false;
+
+        return values.every(value =>
+            Math.abs(value - average) / average <= WALK_AMPLITUDE_TOLERANCE
+        );
+    }
+
+    function getRecentCadence() {
+        if (candidateTimes.length < 3) return null;
+
+        const recentTimes =
+            candidateTimes.slice(Math.max(0, candidateTimes.length - 5));
+
+        const intervals = intervalsFrom(recentTimes);
+        if (!intervals.length) return null;
+
+        const sorted = [...intervals].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)];
+    }
+
+    function addConfirmedSteps(amount) {
+        if (!amount || amount <= 0) return;
+
+        // The existing V9 function is expected to provide this hook.
+        if (typeof window.mediCompareAddSteps === "function") {
+            window.mediCompareAddSteps(amount);
+        }
     }
 
     function registerCandidate(now, amplitude) {
-        let missedSteps = 0;
-
         if (lastCandidateTime) {
             const interval = now - lastCandidateTime;
 
             if (interval < STEP_MIN_INTERVAL_MS) return;
 
             if (interval > STEP_MAX_INTERVAL_MS) {
-                candidateTimes = [];
-                candidateAmplitudes = [];
-                confirmedWalking = false;
-            } else if (confirmedWalking && candidateTimes.length >= 3) {
-                const recentIntervals = [];
-                for (let i = Math.max(1, candidateTimes.length - 3);
-                     i < candidateTimes.length; i++) {
-                    recentIntervals.push(
-                        candidateTimes[i] - candidateTimes[i - 1]
-                    );
+                resetWalkingState();
+            } else if (confirmedWalking) {
+
+                const cadence = getRecentCadence();
+
+                // Reject a second peak that is much too early to be another
+                // walking step.
+                if (cadence &&
+                    interval < cadence * DUPLICATE_INTERVAL_FACTOR) {
+                    return;
                 }
 
-                if (recentIntervals.length) {
-                    const avgInterval =
-                        recentIntervals.reduce((a, b) => a + b, 0) /
-                        recentIntervals.length;
+                // Recover one missed step if the gap is approximately two
+                // normal walking cycles.
+                if (cadence &&
+                    interval >= cadence * 1.62 &&
+                    interval <= cadence * 2.42) {
 
-                    if (interval < avgInterval * DUPLICATE_INTERVAL_FACTOR) {
-                        return;
-                    }
-
-                    // If the sensor missed one regular walking peak, a gap
-                    // close to 2x the normal cadence is strong evidence that
-                    // one step was missed. Recover at most two steps so a
-                    // temporary sensor dropout cannot create a huge jump.
-                    const cadenceRatio = interval / avgInterval;
-                    if (cadenceRatio >= 1.60 && cadenceRatio <= 2.45) {
-                        missedSteps = Math.min(2, Math.max(0, Math.round(cadenceRatio) - 1));
-                    }
+                    addConfirmedSteps(2);
+                    lastConfirmedTime = now;
+                } else {
+                    addConfirmedSteps(1);
+                    lastConfirmedTime = now;
                 }
             }
         }
 
         candidateTimes.push(now);
         candidateAmplitudes.push(amplitude);
-        lastCandidateTime = now;
 
         if (candidateTimes.length > 8) {
             candidateTimes.shift();
+        }
+
+        if (candidateAmplitudes.length > 8) {
             candidateAmplitudes.shift();
         }
 
-        // Startup remains conservative: require a real rhythmic pattern.
+        lastCandidateTime = now;
+
+        // Startup remains conservative.
         if (!confirmedWalking &&
             candidateTimes.length >= WALK_CONFIRM_CANDIDATES &&
             cadenceIsRegular(candidateTimes) &&
@@ -3586,49 +3666,84 @@ HTML = r"""
 
             confirmedWalking = true;
 
-            // Count only the newly confirmed peak. Earlier peaks are evidence.
+            // Count the current confirmed peak as the first walking step.
             addConfirmedSteps(1);
             lastConfirmedTime = now;
-            return;
-        }
-
-        // After confirmation, count each cadence-valid peak. This is the key
-        // v9 change that fixes v8's heavy under-counting.
-        if (confirmedWalking && candidateTimes.length >= 3 &&
-            cadenceIsRegular(candidateTimes)) {
-            addConfirmedSteps(1 + missedSteps);
-            lastConfirmedTime = now;
         }
     }
 
-    function chooseAcceleration(event) {
-        const linear = event.acceleration;
-        const gravityIncluded = event.accelerationIncludingGravity;
+    function processMotion(event) {
+        if (!motionStarted) return;
 
-        function validVector(value) {
-            return value &&
-                Number.isFinite(Number(value.x)) &&
-                Number.isFinite(Number(value.y)) &&
-                Number.isFinite(Number(value.z));
-        }
+        const rawMagnitude = chooseAcceleration(event);
+        if (!Number.isFinite(rawMagnitude)) return;
 
-        if (validVector(linear)) {
-            const lm = Math.sqrt(
-                Number(linear.x) ** 2 +
-                Number(linear.y) ** 2 +
-                Number(linear.z) ** 2
+        filteredSignal =
+            filteredSignal * (1 - SIGNAL_ALPHA) +
+            rawMagnitude * SIGNAL_ALPHA;
+
+        const delta = filteredSignal - previousSignal;
+
+        signalVelocity =
+            signalVelocity * 0.55 +
+            delta * 0.45;
+
+        previousSignal = filteredSignal;
+
+        const absoluteDelta = Math.abs(signalVelocity);
+
+        noiseFloor =
+            noiseFloor * (1 - NOISE_ALPHA) +
+            Math.min(absoluteDelta, 1.5) * NOISE_ALPHA;
+
+        const minimumPeak = confirmedWalking
+            ? WALK_MIN_PEAK
+            : START_MIN_PEAK;
+
+        const peakMargin = confirmedWalking
+            ? WALK_PEAK_MARGIN
+            : START_PEAK_MARGIN;
+
+        const adaptiveThreshold = Math.max(
+            minimumPeak,
+            peakMargin + noiseFloor
+        );
+
+        const rising = signalVelocity > 0;
+        const falling = delta <= 0;
+
+        if (rising) {
+            signalPeakReference = Math.max(
+                signalPeakReference,
+                absoluteDelta
             );
-            // Some Android/browser implementations expose a nominal linear
-            // vector but leave it effectively empty. Fall back in that case.
-            if (lm > 0.08) return { vector: linear, linear: true };
         }
 
-        if (validVector(gravityIncluded)) {
-            return { vector: gravityIncluded, linear: false };
+        if (falling && signalPeakReference > 0) {
+            const amplitude = signalPeakReference;
+            signalPeakReference = 0;
+
+            if (amplitude >= adaptiveThreshold) {
+                registerCandidate(Date.now(), amplitude);
+            }
         }
 
-        return null;
+        const now = Date.now();
+
+        if (confirmedWalking &&
+            lastCandidateTime &&
+            now - lastCandidateTime > WALK_START_TIMEOUT_MS) {
+            resetWalkingState();
+        }
+
+        if (confirmedWalking &&
+            lastConfirmedTime &&
+            now - lastConfirmedTime > WALK_BREAK_TIMEOUT_MS) {
+            resetWalkingState();
+        }
     }
+
+
 
     function handleMotion(event) {
         if (!stepCounting) return;
