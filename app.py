@@ -3395,11 +3395,9 @@ HTML = r"""
 
     // ============================================================
     // STEP COUNTER
-    // Walking-focused accelerometer detector.
-    // Important: phone movement alone should NOT count as a step.
-    // We look for a sustained, regular walking rhythm and consistent
-    // acceleration peaks before confirming steps.
-    // The visible counter refreshes every 5 seconds.
+    // Walking-focused accelerometer detector v6.
+    // Goal: detect repeated walking rhythm, not random phone movement.
+    // The number shown on screen refreshes every 5 seconds.
     // ============================================================
 
     const STEP_GOAL = 10000;
@@ -3425,30 +3423,33 @@ HTML = r"""
     let gravityX = 0;
     let gravityY = 0;
     let gravityZ = 0;
-    let filteredMagnitude = 0;
-    let noiseFloor = 0;
+    let filteredSignal = 0;
     let previousSignal = 0;
     let previousPreviousSignal = 0;
     let detectorReady = false;
+    let gravityInitialized = false;
 
-    // Walking detection tuning.
-    // These deliberately favor precision over reacting to every movement.
-    const GRAVITY_ALPHA = 0.92;
-    const SIGNAL_ALPHA = 0.28;
-    const NOISE_ALPHA = 0.025;
-    const BASE_STEP_THRESHOLD = 1.15;
-    const PEAK_PROMINENCE = 0.55;
-    const STEP_MIN_INTERVAL_MS = 420;
-    const STEP_MAX_INTERVAL_MS = 1150;
-    const WALK_CONFIRM_STEPS = 4;
-    const WALK_INTERVAL_TOLERANCE = 0.28;
-    const WALK_AMPLITUDE_TOLERANCE = 0.45;
+    // Walking detector tuning.
+    // Lower threshold than v5 so normal walking is easier to detect.
+    // False positives are controlled mainly by cadence + repeated amplitude.
+    const GRAVITY_ALPHA = 0.90;
+    const SIGNAL_ALPHA = 0.42;
+    const BASE_STEP_THRESHOLD = 0.62;
+    const PEAK_PROMINENCE = 0.28;
+    const STEP_MIN_INTERVAL_MS = 320;
+    const STEP_MAX_INTERVAL_MS = 1400;
+    const WALK_CONFIRM_CANDIDATES = 3;
+    const WALK_INTERVAL_TOLERANCE = 0.32;
+    const WALK_AMPLITUDE_TOLERANCE = 0.65;
+    const WALK_START_TIMEOUT_MS = 2600;
+    const WALK_BREAK_TIMEOUT_MS = 1900;
 
     let candidateTimes = [];
     let candidateAmplitudes = [];
     let confirmedWalking = false;
     let lastCandidateTime = 0;
     let lastConfirmedTime = 0;
+    let lastPeakAmplitude = 0;
 
     function updateStepDisplay(force = false) {
         if (!force && displayedStepCount === stepCount) {
@@ -3495,6 +3496,7 @@ HTML = r"""
         confirmedWalking = false;
         lastCandidateTime = 0;
         lastConfirmedTime = 0;
+        lastPeakAmplitude = 0;
     }
 
     function cadenceIsRegular(times) {
@@ -3505,7 +3507,7 @@ HTML = r"""
             intervals.push(times[i] - times[i - 1]);
         }
 
-        const recent = intervals.slice(-3);
+        const recent = intervals.slice(-2);
         const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
 
         if (avg < STEP_MIN_INTERVAL_MS || avg > STEP_MAX_INTERVAL_MS) {
@@ -3519,7 +3521,7 @@ HTML = r"""
         return maxDeviation <= WALK_INTERVAL_TOLERANCE;
     }
 
-    function amplitudesAreConsistent(amplitudes) {
+    function amplitudesAreWalkingLike(amplitudes) {
         if (amplitudes.length < 3) return false;
 
         const recent = amplitudes.slice(-3);
@@ -3534,72 +3536,67 @@ HTML = r"""
     }
 
     function registerCandidate(now, amplitude) {
-        if (lastCandidateTime === 0) {
-            candidateTimes = [now];
-            candidateAmplitudes = [amplitude];
-            lastCandidateTime = now;
+        // Ignore duplicate peaks from the same movement.
+        if (lastCandidateTime && now - lastCandidateTime < STEP_MIN_INTERVAL_MS) {
             return;
         }
 
-        const interval = now - lastCandidateTime;
-
-        // Reject rapid duplicate peaks caused by one phone movement.
-        if (interval < STEP_MIN_INTERVAL_MS) {
-            return;
-        }
-
-        // Walking rhythm has broken. Start a fresh sequence.
-        if (interval > STEP_MAX_INTERVAL_MS) {
-            candidateTimes = [now];
-            candidateAmplitudes = [amplitude];
-            lastCandidateTime = now;
+        // If a new candidate arrives too late, the old rhythm is over.
+        if (lastCandidateTime && now - lastCandidateTime > STEP_MAX_INTERVAL_MS) {
+            candidateTimes = [];
+            candidateAmplitudes = [];
             confirmedWalking = false;
-            return;
         }
 
         candidateTimes.push(now);
         candidateAmplitudes.push(amplitude);
+        lastCandidateTime = now;
+        lastPeakAmplitude = amplitude;
 
+        // Keep only a short recent rhythm window.
         if (candidateTimes.length > 6) {
             candidateTimes.shift();
             candidateAmplitudes.shift();
         }
 
-        lastCandidateTime = now;
+        // Need THREE rhythmically consistent peaks before accepting walking.
+        if (!confirmedWalking && candidateTimes.length >= WALK_CONFIRM_CANDIDATES) {
+            if (cadenceIsRegular(candidateTimes) &&
+                amplitudesAreWalkingLike(candidateAmplitudes)) {
 
-        const cadenceOK = cadenceIsRegular(candidateTimes);
-        const amplitudeOK = amplitudesAreConsistent(candidateAmplitudes);
-
-        // Do not count anything until a genuine walking rhythm is established.
-        if (!confirmedWalking &&
-            candidateTimes.length >= WALK_CONFIRM_STEPS &&
-            cadenceOK && amplitudeOK) {
-
-            // Backfill the confirmed walking sequence. This avoids losing the
-            // first few real steps while still rejecting isolated movement.
-            addConfirmedSteps(candidateTimes.length);
-            confirmedWalking = true;
-            lastConfirmedTime = now;
-            candidateTimes = [now];
-            candidateAmplitudes = [amplitude];
-            lastCandidateTime = now;
-            return;
+                // The three confirmed candidates represent three steps.
+                addConfirmedSteps(3);
+                confirmedWalking = true;
+                lastConfirmedTime = now;
+                return;
+            }
         }
 
-        // Once walking is confirmed, only accept another candidate when the
-        // cadence remains regular and the peak strength remains plausible.
-        if (confirmedWalking && cadenceOK && amplitudeOK) {
-            addConfirmedSteps(1);
-            lastConfirmedTime = now;
+        // Once walking is confirmed, accept only cadence-consistent peaks.
+        if (confirmedWalking && candidateTimes.length >= 3) {
+            if (cadenceIsRegular(candidateTimes) &&
+                amplitudesAreWalkingLike(candidateAmplitudes)) {
+                addConfirmedSteps(1);
+                lastConfirmedTime = now;
+            }
         }
     }
 
     function handleMotion(event) {
         if (!stepCounting) return;
 
-        const acceleration =
-            event.acceleration ||
-            event.accelerationIncludingGravity;
+        // Prefer acceleration without gravity when available. If the browser
+        // does not provide it, use accelerationIncludingGravity and remove the
+        // gravity component below.
+        const hasLinearAcceleration =
+            event.acceleration &&
+            Number.isFinite(Number(event.acceleration.x)) &&
+            Number.isFinite(Number(event.acceleration.y)) &&
+            Number.isFinite(Number(event.acceleration.z));
+
+        const acceleration = hasLinearAcceleration
+            ? event.acceleration
+            : event.accelerationIncludingGravity;
 
         if (!acceleration) return;
 
@@ -3607,53 +3604,60 @@ HTML = r"""
         const y = Number(acceleration.y) || 0;
         const z = Number(acceleration.z) || 0;
 
-        // Estimate gravity so phone orientation changes don't directly
-        // become step signals.
-        gravityX = GRAVITY_ALPHA * gravityX + (1 - GRAVITY_ALPHA) * x;
-        gravityY = GRAVITY_ALPHA * gravityY + (1 - GRAVITY_ALPHA) * y;
-        gravityZ = GRAVITY_ALPHA * gravityZ + (1 - GRAVITY_ALPHA) * z;
+        let signalMagnitude;
 
-        const linearX = x - gravityX;
-        const linearY = y - gravityY;
-        const linearZ = z - gravityZ;
+        if (hasLinearAcceleration) {
+            // It is already gravity-free. Do NOT subtract gravity again.
+            signalMagnitude = Math.sqrt(x * x + y * y + z * z);
+        } else {
+            // Estimate gravity only for accelerationIncludingGravity.
+            if (!gravityInitialized) {
+                gravityX = x;
+                gravityY = y;
+                gravityZ = z;
+                gravityInitialized = true;
+                return;
+            }
 
-        const magnitude = Math.sqrt(
-            linearX * linearX +
-            linearY * linearY +
-            linearZ * linearZ
-        );
+            gravityX = GRAVITY_ALPHA * gravityX + (1 - GRAVITY_ALPHA) * x;
+            gravityY = GRAVITY_ALPHA * gravityY + (1 - GRAVITY_ALPHA) * y;
+            gravityZ = GRAVITY_ALPHA * gravityZ + (1 - GRAVITY_ALPHA) * z;
+
+            const linearX = x - gravityX;
+            const linearY = y - gravityY;
+            const linearZ = z - gravityZ;
+
+            signalMagnitude = Math.sqrt(
+                linearX * linearX +
+                linearY * linearY +
+                linearZ * linearZ
+            );
+        }
 
         if (!detectorReady) {
-            filteredMagnitude = magnitude;
-            noiseFloor = magnitude;
-            previousSignal = 0;
+            filteredSignal = signalMagnitude;
             previousPreviousSignal = 0;
+            previousSignal = filteredSignal;
             detectorReady = true;
             return;
         }
 
-        filteredMagnitude =
-            SIGNAL_ALPHA * magnitude +
-            (1 - SIGNAL_ALPHA) * filteredMagnitude;
+        filteredSignal =
+            SIGNAL_ALPHA * signalMagnitude +
+            (1 - SIGNAL_ALPHA) * filteredSignal;
 
-        // Slow baseline tracks ordinary phone movement/noise.
-        noiseFloor =
-            NOISE_ALPHA * filteredMagnitude +
-            (1 - NOISE_ALPHA) * noiseFloor;
-
-        const signal = filteredMagnitude - noiseFloor;
         const now = performance.now();
 
-        // Local maximum: previous sample is higher than both neighbors.
+        // A peak must be a genuine local maximum above the walking threshold.
         const isPeak =
             previousSignal > previousPreviousSignal &&
-            previousSignal >= signal;
+            previousSignal >= filteredSignal;
 
         if (isPeak) {
             const peakAmplitude = previousSignal;
             const adaptiveThreshold = Math.max(
                 BASE_STEP_THRESHOLD,
-                noiseFloor * 0.55 + PEAK_PROMINENCE
+                peakAmplitude * 0.0 + PEAK_PROMINENCE
             );
 
             if (peakAmplitude >= adaptiveThreshold) {
@@ -3662,14 +3666,21 @@ HTML = r"""
         }
 
         previousPreviousSignal = previousSignal;
-        previousSignal = signal;
+        previousSignal = filteredSignal;
 
-        // If the phone stops producing a walking rhythm, leave walking mode.
-        if (
-            confirmedWalking &&
+        // Walking must continue. If it stops, require a fresh 3-peak rhythm.
+        if (confirmedWalking &&
             lastConfirmedTime > 0 &&
-            now - lastConfirmedTime > STEP_MAX_INTERVAL_MS * 1.4
-        ) {
+            now - lastConfirmedTime > WALK_BREAK_TIMEOUT_MS) {
+            resetWalkingDetector();
+        }
+
+        // If the user never establishes a rhythm, clear old candidates after
+        // a short period so isolated phone movement cannot combine with a
+        // later movement to create a fake walking sequence.
+        if (!confirmedWalking &&
+            lastCandidateTime > 0 &&
+            now - lastCandidateTime > WALK_START_TIMEOUT_MS) {
             resetWalkingDetector();
         }
     }
@@ -3699,15 +3710,14 @@ HTML = r"""
                 }
             }
 
-            filteredMagnitude = 0;
-            noiseFloor = 0;
-            previousSignal = 0;
-            previousPreviousSignal = 0;
-            detectorReady = false;
             gravityX = 0;
             gravityY = 0;
             gravityZ = 0;
+            filteredSignal = 0;
+            previousSignal = 0;
+            previousPreviousSignal = 0;
             detectorReady = false;
+            gravityInitialized = false;
             resetWalkingDetector();
             stepCounting = true;
 
@@ -3751,15 +3761,14 @@ HTML = r"""
     stepResetButton.addEventListener("click", function () {
         stepCount = 0;
         displayedStepCount = 0;
-        filteredMagnitude = 0;
-        noiseFloor = 0;
-        previousSignal = 0;
-        previousPreviousSignal = 0;
-        detectorReady = false;
         gravityX = 0;
         gravityY = 0;
         gravityZ = 0;
+        filteredSignal = 0;
+        previousSignal = 0;
+        previousPreviousSignal = 0;
         detectorReady = false;
+        gravityInitialized = false;
         resetWalkingDetector();
         saveSteps();
         updateStepDisplay(true);
