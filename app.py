@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, send_file
 import requests
 import os
 import json
@@ -6,6 +6,16 @@ import sqlite3
 import threading
 import time
 import hashlib
+from io import BytesIO
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+except ImportError:
+    A4 = None
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -4100,79 +4110,27 @@ HTML = r"""
 
 
     // ============================================================
-    // DIET PDF EXPORT
-    // Uses the browser's native print-to-PDF flow so the user gets
-    // a real PDF file instead of a plain .txt note.
+    // DIET PDF DOWNLOAD
+    // Downloads a real server-generated PDF. No browser print dialog.
     // ============================================================
-    function escapeDietPdfText(value) {
-        return String(value ?? "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
-    }
-
-    function buildDietPdfContent() {
-        const printArea = document.getElementById("dietPdfPrintArea");
-        if (!printArea) return false;
-
-        // Pull the currently generated diet result from the visible Diet section.
-        // This keeps the PDF aligned with exactly what the user generated.
-        // The actual Diet container in the app is #dietPanel.
-        // Build a clean printable chart from the currently generated values
-        // instead of cloning the interactive form/buttons.
-        const dietPanel = document.getElementById("dietPanel");
-        const dietResult = document.getElementById("dietResult");
-        if (!dietPanel || !dietResult || !dietResult.classList.contains("show")) {
-            return false;
-        }
-
-        const profileText = document.getElementById("dietProfile")?.textContent?.trim() || "";
-        const breakfast = document.getElementById("dietBreakfast")?.textContent?.trim() || "";
-        const lunch = document.getElementById("dietLunch")?.textContent?.trim() || "";
-        const dinner = document.getElementById("dietDinner")?.textContent?.trim() || "";
-
-        printArea.innerHTML = `
-            <div class="diet-pdf-header">
-                <div class="diet-pdf-icon">🥗</div>
-                <h1>MediCompare</h1>
-                <h2>Healthy Diet Guide</h2>
-                <p>General healthy eating guide generated from your entered details.</p>
-            </div>
-
-            <div class="diet-pdf-profile">
-                <strong>Your Profile</strong>
-                <div>${escapeDietPdfText(profileText)}</div>
-            </div>
-
-            <div class="diet-pdf-meal"><strong>🌅 Breakfast</strong><p>${escapeDietPdfText(breakfast)}</p></div>
-            <div class="diet-pdf-meal"><strong>🍎 Mid-Morning</strong><p>One fruit or a small handful of unsalted nuts.</p></div>
-            <div class="diet-pdf-meal"><strong>🍛 Lunch</strong><p>${escapeDietPdfText(lunch)}</p></div>
-            <div class="diet-pdf-meal"><strong>☕ Evening</strong><p>Fruit, sprouts, curd or another light snack.</p></div>
-            <div class="diet-pdf-meal"><strong>🌙 Dinner</strong><p>${escapeDietPdfText(dinner)}</p></div>
-            <div class="diet-pdf-meal"><strong>💧 Hydration</strong><p>Drink water regularly through the day and with meals according to your thirst and routine.</p></div>
-
-            <div class="diet-pdf-note">
-                <strong>Important:</strong> This is a general wellness guide, not a
-                medical or therapeutic diet prescription. Individual nutritional
-                needs can vary. For medical conditions or therapeutic diets,
-                consult a qualified healthcare professional or registered dietitian.
-            </div>
-        `;
-
-        return true;
-    }
-
     function downloadDietChartAsPDF() {
-        if (!buildDietPdfContent()) {
+        const age = Number(dietAge.value);
+        const weight = Number(dietWeight.value);
+        const activity = dietActivity.value || "moderate";
+
+        if (!Number.isFinite(age) || age < 1 || age > 120 ||
+            !Number.isFinite(weight) || weight <= 0 || weight > 500) {
             alert("Please generate your diet chart first.");
             return;
         }
 
-        // Let the browser create a real PDF through its native print dialog.
-        window.setTimeout(function () {
-            window.print();
-        }, 80);
+        const params = new URLSearchParams({
+            age: String(age),
+            weight: String(weight),
+            activity: activity
+        });
+
+        window.location.href = "/download-diet-pdf?" + params.toString();
     }
 
 
@@ -5043,7 +5001,7 @@ HTML = r"""
             "Disclaimer: General healthy-diet guide only; not a medical or therapeutic diet prescription.";
     });
 
-    // Download button now uses the real PDF print flow only.
+    // Download button gets a real server-generated PDF file.
     dietDownload.addEventListener("click", downloadDietChartAsPDF);
 
 </script>
@@ -5051,6 +5009,104 @@ HTML = r"""
 </body>
 </html>
 """
+# ============================================================
+# DIET PDF DOWNLOAD
+# Generates an actual PDF on the server so Android/iOS/desktop
+# browsers all download the same .pdf file without window.print().
+# ============================================================
+@app.get("/download-diet-pdf")
+def download_diet_pdf():
+    if A4 is None:
+        return "PDF support is not installed on the server. Please install reportlab.", 500
+
+    try:
+        age = float(request.args.get("age", ""))
+        weight = float(request.args.get("weight", ""))
+    except (TypeError, ValueError):
+        return "Please generate your diet chart first.", 400
+
+    if not (1 <= age <= 120) or not (0 < weight <= 500):
+        return "Invalid age or weight.", 400
+
+    activity = request.args.get("activity", "moderate")
+    guides = {
+        "low": {
+            "label": "Low activity",
+            "breakfast": "Oats or idli/upma with fruit; choose a balanced portion.",
+            "lunch": "Rice or roti with dal, plenty of vegetables and curd.",
+            "dinner": "Roti with vegetables and dal, or a light balanced meal."
+        },
+        "moderate": {
+            "label": "Moderate activity",
+            "breakfast": "Idli, dosa, oats or upma with fruit and a protein-rich side.",
+            "lunch": "Rice or roti with dal/protein, vegetables and curd.",
+            "dinner": "Roti or rice with vegetables and dal/protein; keep the meal balanced."
+        },
+        "high": {
+            "label": "High activity",
+            "breakfast": "Oats/idli/upma with fruit plus a protein-rich food such as curd, eggs or sprouts.",
+            "lunch": "Rice or roti with a good protein source, vegetables and curd.",
+            "dinner": "A balanced meal with roti/rice, vegetables and a protein source."
+        }
+    }
+    guide = guides.get(activity, guides["moderate"])
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=40, leftMargin=40,
+        topMargin=42, bottomMargin=42, title="MediCompare Healthy Diet Guide"
+    )
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("DietTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=20, spaceAfter=6)
+    subtitle = ParagraphStyle("DietSubtitle", parent=styles["Normal"], alignment=TA_CENTER, fontSize=10, spaceAfter=18)
+    heading = ParagraphStyle("DietHeading", parent=styles["Heading3"], fontSize=12, spaceAfter=5)
+    body = ParagraphStyle("DietBody", parent=styles["BodyText"], fontSize=10, leading=15, spaceAfter=4)
+    note = ParagraphStyle("DietNote", parent=styles["BodyText"], fontSize=8.5, leading=12, spaceBefore=12)
+
+    story = [
+        Paragraph("MediCompare", title),
+        Paragraph("Healthy Diet Guide", heading),
+        Paragraph("General healthy eating guide generated from your entered details.", subtitle),
+        Paragraph("Your Profile", heading),
+        Paragraph(f"Age: {age:g} &nbsp;&nbsp; | &nbsp;&nbsp; Weight: {weight:g} kg &nbsp;&nbsp; | &nbsp;&nbsp; Activity: {guide['label']}", body),
+        Spacer(1, 10)
+    ]
+
+    rows = [
+        [Paragraph("Meal", heading), Paragraph("Suggested guide", heading)],
+        ["Breakfast", guide["breakfast"]],
+        ["Mid-Morning", "One fruit or a small handful of unsalted nuts."],
+        ["Lunch", guide["lunch"]],
+        ["Evening", "Fruit, sprouts, curd or another light snack."],
+        ["Dinner", guide["dinner"]],
+        ["Hydration", "Drink water regularly through the day and with meals according to your thirst and routine."],
+    ]
+    table = Table(rows, colWidths=[105, 390], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#eeeeee")),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#cccccc")),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME", (0,1), (0,-1), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,-1), 9.5),
+        ("LEADING", (0,0), (-1,-1), 13),
+        ("LEFTPADDING", (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+        ("TOPPADDING", (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+    ]))
+    story.append(table)
+    story.append(Paragraph(
+        "<b>Important:</b> This is a general wellness guide, not a medical or therapeutic diet prescription. "
+        "Individual nutritional needs can vary. For medical conditions or therapeutic diets, consult a qualified healthcare professional or registered dietitian.",
+        note
+    ))
+
+    doc.build(story)
+    buffer.seek(0)
+    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name="MediCompare_Diet_Chart.pdf")
+
+
 # ============================================================
 # HOME / SEARCH
 # ============================================================
