@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 import hashlib
+import difflib
 from io import BytesIO
 
 try:
@@ -3257,6 +3258,30 @@ HTML = r"""
             line-height: 1.45;
         }
         .ocr-result.show { display: block; }
+        .ocr-match-list {
+            display: none;
+            margin-top: 12px;
+            gap: 8px;
+        }
+        .ocr-match-list.show { display: grid; }
+        .ocr-match-card {
+            padding: 11px 12px;
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid #cfe9df;
+        }
+        .ocr-match-name { font-weight: 900; color: #0b735a; }
+        .ocr-match-meta { margin-top: 3px; font-size: 12px; color: #687773; }
+        .ocr-match-button {
+            margin-top: 8px;
+            border: 0;
+            border-radius: 10px;
+            padding: 8px 11px;
+            background: #0b8668;
+            color: #fff;
+            font-weight: 800;
+            cursor: pointer;
+        }
 
     </style>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -4108,6 +4133,7 @@ HTML = r"""
         </div>
 
         <div class="ocr-result" id="ocrResult"></div>
+        <div class="ocr-match-list" id="ocrMatchList"></div>
         <div class="ocr-text" id="ocrText"></div>
 
         <canvas id="cameraCanvas" style="display:none;"></canvas>
@@ -4383,6 +4409,8 @@ HTML = r"""
         ocrResult.classList.remove("show");
         ocrText.textContent = "";
         ocrText.classList.remove("show");
+        const matchList = document.getElementById("ocrMatchList");
+        if (matchList) { matchList.innerHTML = ""; matchList.classList.remove("show"); }
     }
 
     function cleanOcrLine(line) {
@@ -4623,25 +4651,83 @@ HTML = r"""
             });
 
             const top = votedCandidates[0];
-            const medicineQuery = top ? top.text.slice(0, 80) : pickMedicineQuery(combinedText);
-            const strongEnough = !!top && top.score >= 9 && (top.hits >= 2 || top.bestConfidence >= 55);
+            const localQuery = top ? top.text.slice(0, 80) : pickMedicineQuery(combinedText);
 
             ocrText.textContent = combinedText || "No readable text was found.";
             ocrText.classList.add("show");
 
-            if (!medicineQuery || !strongEnough) {
-                ocrResult.textContent = "Could not confidently identify a medicine name. Please retake a sharp, well-lit photo with the medicine name and strength clearly visible.";
+            // First try the saved shared catalogue. This can correct OCR errors such as
+            // D0LO / 6S0 -> DOLO 650 without spending a new pharmacy API call.
+            let catalogueMatches = [];
+            try {
+                const response = await fetch("/api/ocr-match", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: combinedText })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    catalogueMatches = Array.isArray(data.matches) ? data.matches : [];
+                }
+            } catch (matchError) {
+                console.warn("OCR catalogue matching unavailable:", matchError);
+            }
+
+            const matchList = document.getElementById("ocrMatchList");
+            matchList.innerHTML = "";
+            matchList.classList.remove("show");
+
+            if (catalogueMatches.length) {
+                catalogueMatches.slice(0, 3).forEach(function (match, index) {
+                    const card = document.createElement("div");
+                    card.className = "ocr-match-card";
+                    const name = document.createElement("div");
+                    name.className = "ocr-match-name";
+                    name.textContent = match.name;
+                    const meta = document.createElement("div");
+                    meta.className = "ocr-match-meta";
+                    meta.textContent = [match.composition, match.pack_size, match.manufacturer].filter(Boolean).join(" • ");
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "ocr-match-button";
+                    button.textContent = index === 0 ? "Use this medicine" : "Use this result";
+                    button.addEventListener("click", function () {
+                        medicineInput.value = match.name;
+                        updateClearButton();
+                        closeCamera();
+                        medicineInput.focus();
+                    });
+                    card.appendChild(name);
+                    if (meta.textContent) card.appendChild(meta);
+                    card.appendChild(button);
+                    matchList.appendChild(card);
+                });
+                matchList.classList.add("show");
+                ocrResult.textContent = "Possible medicine found from your saved pharmacy catalogue. Please verify the exact name, strength and pack size.";
                 ocrResult.classList.add("show");
-                cameraHint.textContent = "Tip: keep the medicine name large in the guide, avoid glare, and capture the strip/box straight-on.";
-                setOcrProgress(100, "OCR finished — confidence too low");
+                cameraHint.textContent = "Choose the correct catalogue result. We will not search until you confirm it.";
+                cameraResult.textContent = "OCR matched a catalogue medicine — choose the correct result.";
+                setOcrProgress(100, "OCR + catalogue matching complete");
+                return;
+            }
+
+            // If no catalogue match exists, show the OCR text only when it is useful.
+            // Never push weak/gibberish OCR directly into the medicine search.
+            const medicineQuery = localQuery;
+            const strongEnough = !!top && top.score >= 9 && (top.hits >= 2 || top.bestConfidence >= 55);
+            if (!medicineQuery || !strongEnough) {
+                ocrResult.textContent = "Could not confidently identify a medicine from the available catalogue. Please retake a sharp, well-lit photo.";
+                ocrResult.classList.add("show");
+                cameraHint.textContent = "Tip: keep the medicine name large, straight-on and free from glare.";
+                setOcrProgress(100, "OCR finished — no confident catalogue match");
                 return;
             }
 
             medicineInput.value = medicineQuery;
             updateClearButton();
-            ocrResult.textContent = "Possible medicine: " + medicineQuery + " — please verify the name and strength before tapping Search.";
+            ocrResult.textContent = "OCR text: " + medicineQuery + " — please correct/verify it before searching.";
             ocrResult.classList.add("show");
-            cameraHint.textContent = "Medicine text detected. Confirm the name and strength before searching prices.";
+            cameraHint.textContent = "No saved catalogue match was found. Verify the OCR text before searching.";
             cameraResult.textContent = "OCR completed — please verify the result.";
             setOcrProgress(100, "OCR complete");
 
@@ -5463,6 +5549,118 @@ def download_diet_pdf():
 # ============================================================
 # HOME / SEARCH
 # ============================================================
+
+
+# ============================================================
+# OCR -> SHARED CATALOGUE MATCHING
+# ============================================================
+@app.route("/api/ocr-match", methods=["POST"])
+def ocr_match():
+    """Match noisy OCR text against products already discovered in our shared catalogue.
+
+    This endpoint does NOT call pharmacy APIs. It only uses saved catalogue data,
+    so OCR retries do not consume Parse credits.
+    """
+    payload = request.get_json(silent=True) or {}
+    raw_text = str(payload.get("text") or "").strip()
+    if not raw_text:
+        return {"matches": []}
+
+    # Keep useful OCR lines and short phrases, while dropping obvious metadata noise.
+    lines = []
+    for raw_line in raw_text.splitlines():
+        line = " ".join(str(raw_line).split())
+        if 3 <= len(line) <= 80:
+            lines.append(line)
+
+    if not lines:
+        lines = [raw_text[:80]]
+
+    with db_lock:
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT name, manufacturer, pack_size, composition,
+                       price, mrp, pharmacy, product_url
+                FROM products
+                WHERE name IS NOT NULL AND trim(name) <> ''
+                ORDER BY last_seen_at DESC
+                LIMIT 3000
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+
+    def compact(value):
+        return "".join(ch for ch in normalize_query(value) if ch.isalnum())
+
+    def similarity(a, b):
+        a = compact(a)
+        b = compact(b)
+        if not a or not b:
+            return 0.0
+        if a == b:
+            return 1.0
+        if a in b or b in a:
+            return min(0.98, 0.82 + 0.16 * min(len(a), len(b)) / max(len(a), len(b)))
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    results = []
+    seen = set()
+    for row in rows:
+        name = str(row["name"] or "").strip()
+        name_norm = normalize_query(name)
+        if not name_norm:
+            continue
+
+        best = 0.0
+        best_line = ""
+        for line in lines:
+            # Compare the full line and its individual words/short groups.
+            candidates = [line]
+            tokens = normalize_query(line).split()
+            candidates.extend(tokens)
+            for size in (2, 3):
+                for j in range(max(0, len(tokens) - size + 1)):
+                    candidates.append(" ".join(tokens[j:j + size]))
+
+            for candidate in candidates:
+                score = similarity(candidate, name)
+                if score > best:
+                    best = score
+                    best_line = candidate
+
+            # Composition can rescue generic brand OCR when the OCR captured the
+            # active ingredient instead of the brand name.
+            composition = str(row["composition"] or "")
+            if composition:
+                comp_score = similarity(line, composition)
+                best = max(best, comp_score * 0.96)
+
+        if best < 0.68:
+            continue
+
+        key = name_norm
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append({
+            "name": name,
+            "manufacturer": row["manufacturer"],
+            "pack_size": row["pack_size"],
+            "composition": row["composition"],
+            "price": row["price"],
+            "mrp": row["mrp"],
+            "pharmacy": row["pharmacy"],
+            "product_url": row["product_url"],
+            "score": round(best, 3),
+            "ocr_fragment": best_line,
+        })
+
+    results.sort(key=lambda item: item["score"], reverse=True)
+    return {"matches": results[:8]}
+
 
 @app.route("/", methods=["GET"])
 def home():
