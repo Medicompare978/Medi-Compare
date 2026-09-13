@@ -4397,25 +4397,31 @@ HTML = r"""
             const image = new Image();
 
             image.onload = function () {
-                const baseWidth = Math.min(1800, Math.max(900, image.naturalWidth || 1200));
-                const scale = baseWidth / Math.max(1, image.naturalWidth || 1);
-                const width = Math.round((image.naturalWidth || 1200) * scale);
-                const height = Math.round((image.naturalHeight || 800) * scale);
+                const sourceWidth = image.naturalWidth || 1200;
+                const sourceHeight = image.naturalHeight || 800;
+                const maxWidth = 1800;
+                const scale = Math.min(1.6, maxWidth / Math.max(1, sourceWidth));
+                const width = Math.max(900, Math.round(sourceWidth * scale));
+                const height = Math.max(600, Math.round(sourceHeight * scale));
 
-                const makeCanvas = function (mode) {
+                function render(mode, crop) {
                     const canvas = document.createElement("canvas");
-                    canvas.width = width;
-                    canvas.height = height;
+                    const sx = crop ? Math.round(width * 0.08) : 0;
+                    const sy = crop ? Math.round(height * 0.18) : 0;
+                    const sw = crop ? Math.round(width * 0.84) : width;
+                    const sh = crop ? Math.round(height * 0.64) : height;
+                    canvas.width = sw;
+                    canvas.height = sh;
 
                     const ctx = canvas.getContext("2d", { willReadFrequently: true });
                     ctx.imageSmoothingEnabled = true;
-                    ctx.drawImage(image, 0, 0, width, height);
+                    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
 
                     if (mode === "original") {
-                        return canvas.toDataURL("image/jpeg", 0.94);
+                        return canvas.toDataURL("image/jpeg", 0.96);
                     }
 
-                    const imageData = ctx.getImageData(0, 0, width, height);
+                    const imageData = ctx.getImageData(0, 0, sw, sh);
                     const data = imageData.data;
 
                     for (let i = 0; i < data.length; i += 4) {
@@ -4424,29 +4430,36 @@ HTML = r"""
                             0.587 * data[i + 1] +
                             0.114 * data[i + 2];
 
+                        let value;
                         if (mode === "gray") {
-                            const contrast = ((gray - 128) * 1.45) + 128;
-                            const value = Math.max(0, Math.min(255, contrast));
-                            data[i] = value;
-                            data[i + 1] = value;
-                            data[i + 2] = value;
+                            // Stronger contrast for faded labels and paper.
+                            value = Math.max(0, Math.min(255, ((gray - 128) * 1.75) + 128));
+                        } else if (mode === "threshold") {
+                            value = gray > 160 ? 255 : 0;
+                        } else if (mode === "soft-threshold") {
+                            value = gray > 145 ? 255 : (gray < 118 ? 0 : gray);
                         } else {
-                            // High-contrast black/white pass for faint printed text.
-                            const value = gray > 165 ? 255 : (gray < 105 ? 0 : gray);
-                            data[i] = value;
-                            data[i + 1] = value;
-                            data[i + 2] = value;
+                            value = 255 - gray;
                         }
+
+                        data[i] = value;
+                        data[i + 1] = value;
+                        data[i + 2] = value;
                     }
 
                     ctx.putImageData(imageData, 0, 0);
                     return canvas.toDataURL("image/png");
-                };
+                }
 
+                // Center-cropped passes are especially useful when the medicine
+                // name is written/printed in the middle of the camera guide.
                 resolve([
-                    { name: "original", data: makeCanvas("original"), psm: "6" },
-                    { name: "contrast", data: makeCanvas("gray"), psm: "6" },
-                    { name: "threshold", data: makeCanvas("threshold"), psm: "11" }
+                    { name: "full-original", data: render("original", false), psm: "6" },
+                    { name: "center-original", data: render("original", true), psm: "7" },
+                    { name: "center-gray", data: render("gray", true), psm: "7" },
+                    { name: "center-threshold", data: render("threshold", true), psm: "7" },
+                    { name: "center-soft", data: render("soft-threshold", true), psm: "11" },
+                    { name: "center-inverted", data: render("invert", true), psm: "7" }
                 ]);
             };
 
@@ -4460,51 +4473,52 @@ HTML = r"""
 
     function normalizeOCRMedicineText(text) {
         return cleanOcrLine(text)
-            .replace(/\b(\d+)\s*O\s*(mg|mcg|g|ml|iu)\b/gi, "$1 0 $2")
+            .replace(/[|]/g, "I")
+            .replace(/\b(\d+)\s*[oO]\s*(mg|mcg|g|ml|iu)\b/gi, "$1 0 $2")
             .replace(/\s+/g, " ")
             .trim();
+    }
+
+    function scoreMedicineLine(line) {
+        const clean = normalizeOCRMedicineText(line);
+        if (!clean || clean.length < 3 || clean.length > 60) return -99;
+
+        const letters = (clean.match(/[A-Za-z]/g) || []).length;
+        const digits = (clean.match(/\d/g) || []).length;
+        const words = clean.split(/\s+/).filter(Boolean);
+        const strengthPattern = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|ug|g|ml|iu)\b/i;
+        const formPattern = /\b(tablet|tablets|tab|capsule|capsules|syrup|drops|injection|cream|gel|ointment|suspension)\b/i;
+        const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price|ref|code|arr|cl|ew|ri|on)\b/i;
+
+        let score = 0;
+        if (strengthPattern.test(clean)) score += 12;
+        if (formPattern.test(clean)) score += 3;
+        if (letters >= 4) score += 2;
+        if (digits >= 1) score += 2;
+        if (words.length <= 5) score += 2;
+        if (clean.length <= 28) score += 3;
+        if (noisePattern.test(clean)) score -= 12;
+        if (/[^A-Za-z0-9 .+\-/()%µ]/.test(clean)) score -= 3;
+
+        return score;
     }
 
     function pickMedicineQuery(text) {
         const lines = text
             .split(/\r?\n/)
             .map(cleanOcrLine)
-            .filter(function (line) {
-                return line.length >= 3 && line.length <= 80;
-            });
-
-        if (!lines.length) return "";
-
-        const strengthPattern = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|ug|g|ml|iu)\b/i;
-        const formPattern = /\b(tablet|tablets|tab|capsule|capsules|syrup|drops|injection|cream|gel|ointment|suspension)\b/i;
-        const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price|ref|code|arr)\b/i;
+            .filter(function (line) { return line.length >= 3 && line.length <= 80; });
 
         const candidates = lines.map(function (line, index) {
-            let score = 0;
-            const letters = (line.match(/[A-Za-z]/g) || []).length;
-            const digits = (line.match(/\d/g) || []).length;
-
-            if (strengthPattern.test(line)) score += 9;
-            if (formPattern.test(line)) score += 4;
-            if (letters >= 4) score += 2;
-            if (digits >= 1) score += 1;
-            if (line.length <= 45) score += 1;
-            if (noisePattern.test(line)) score -= 8;
-
-            // Prefer a short brand + strength line such as "DOLO 650".
-            if (letters >= 3 && digits >= 1 && line.length <= 28) score += 4;
-
-            return { line: line, score: score, index: index };
-        });
+            return { line: normalizeOCRMedicineText(line), score: scoreMedicineLine(line), index: index };
+        }).filter(function (item) { return item.score >= 5; });
 
         candidates.sort(function (a, b) {
             return b.score - a.score || a.index - b.index;
         });
 
-        const best = candidates[0];
-        if (!best || best.score < 5) return "";
-
-        return normalizeOCRMedicineText(best.line).slice(0, 80);
+        if (!candidates.length) return "";
+        return candidates[0].line.slice(0, 80);
     }
 
     async function runMedicineOCR() {
@@ -4534,7 +4548,7 @@ HTML = r"""
 
             for (let i = 0; i < images.length; i++) {
                 const pass = images[i];
-                const baseProgress = Math.round((i / images.length) * 80);
+                const baseProgress = Math.round((i / images.length) * 78);
 
                 setOcrProgress(
                     baseProgress,
@@ -4574,7 +4588,8 @@ HTML = r"""
                         confidence:
                             result && result.data && Number.isFinite(result.data.confidence)
                                 ? result.data.confidence
-                                : 0
+                                : 0,
+                        pass: pass.name
                     });
                 }
             }
@@ -4589,10 +4604,38 @@ HTML = r"""
                 .map(function (item) { return item.text; })
                 .join("\n");
 
-            const medicineQuery = pickMedicineQuery(combinedText);
+            // Vote across OCR passes instead of trusting one noisy pass.
+            const candidateMap = {};
+            outputs.forEach(function (item) {
+                const localLines = item.text
+                    .split(/\r?\n/)
+                    .map(cleanOcrLine)
+                    .filter(function (line) { return line.length >= 3; });
 
-            ocrText.textContent =
-                combinedText || "No readable text was found.";
+                localLines.forEach(function (line) {
+                    const normalized = normalizeOCRMedicineText(line);
+                    const score = scoreMedicineLine(normalized);
+                    if (score < 5) return;
+                    const key = normalized.toUpperCase();
+                    if (!candidateMap[key]) {
+                        candidateMap[key] = { text: normalized, score: 0, hits: 0 };
+                    }
+                    candidateMap[key].score += score + Math.min(8, item.confidence / 12);
+                    candidateMap[key].hits += 1;
+                });
+            });
+
+            const votedCandidates = Object.keys(candidateMap)
+                .map(function (key) { return candidateMap[key]; })
+                .sort(function (a, b) {
+                    return b.hits - a.hits || b.score - a.score;
+                });
+
+            const medicineQuery = votedCandidates.length
+                ? votedCandidates[0].text.slice(0, 80)
+                : pickMedicineQuery(combinedText);
+
+            ocrText.textContent = combinedText || "No readable text was found.";
             ocrText.classList.add("show");
 
             if (!medicineQuery) {
@@ -4609,8 +4652,8 @@ HTML = r"""
             updateClearButton();
 
             ocrResult.textContent =
-                "Detected: " + medicineQuery +
-                " — please confirm the medicine name and strength, then tap Search.";
+                "Possible medicine: " + medicineQuery +
+                " — please verify the name and strength before tapping Search.";
 
             ocrResult.classList.add("show");
             cameraHint.textContent =
