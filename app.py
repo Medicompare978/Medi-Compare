@@ -4392,25 +4392,108 @@ HTML = r"""
             .trim();
     }
 
+    function prepareOCRImages(dataUrl) {
+        return new Promise(function (resolve) {
+            const image = new Image();
+
+            image.onload = function () {
+                const baseWidth = Math.min(1800, Math.max(900, image.naturalWidth || 1200));
+                const scale = baseWidth / Math.max(1, image.naturalWidth || 1);
+                const width = Math.round((image.naturalWidth || 1200) * scale);
+                const height = Math.round((image.naturalHeight || 800) * scale);
+
+                const makeCanvas = function (mode) {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.drawImage(image, 0, 0, width, height);
+
+                    if (mode === "original") {
+                        return canvas.toDataURL("image/jpeg", 0.94);
+                    }
+
+                    const imageData = ctx.getImageData(0, 0, width, height);
+                    const data = imageData.data;
+
+                    for (let i = 0; i < data.length; i += 4) {
+                        const gray =
+                            0.299 * data[i] +
+                            0.587 * data[i + 1] +
+                            0.114 * data[i + 2];
+
+                        if (mode === "gray") {
+                            const contrast = ((gray - 128) * 1.45) + 128;
+                            const value = Math.max(0, Math.min(255, contrast));
+                            data[i] = value;
+                            data[i + 1] = value;
+                            data[i + 2] = value;
+                        } else {
+                            // High-contrast black/white pass for faint printed text.
+                            const value = gray > 165 ? 255 : (gray < 105 ? 0 : gray);
+                            data[i] = value;
+                            data[i + 1] = value;
+                            data[i + 2] = value;
+                        }
+                    }
+
+                    ctx.putImageData(imageData, 0, 0);
+                    return canvas.toDataURL("image/png");
+                };
+
+                resolve([
+                    { name: "original", data: makeCanvas("original"), psm: "6" },
+                    { name: "contrast", data: makeCanvas("gray"), psm: "6" },
+                    { name: "threshold", data: makeCanvas("threshold"), psm: "11" }
+                ]);
+            };
+
+            image.onerror = function () {
+                resolve([{ name: "original", data: dataUrl, psm: "6" }]);
+            };
+
+            image.src = dataUrl;
+        });
+    }
+
+    function normalizeOCRMedicineText(text) {
+        return cleanOcrLine(text)
+            .replace(/\b(\d+)\s*O\s*(mg|mcg|g|ml|iu)\b/gi, "$1 0 $2")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
     function pickMedicineQuery(text) {
         const lines = text
             .split(/\r?\n/)
             .map(cleanOcrLine)
-            .filter(function (line) { return line.length >= 3; });
+            .filter(function (line) {
+                return line.length >= 3 && line.length <= 80;
+            });
 
         if (!lines.length) return "";
 
         const strengthPattern = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|ug|g|ml|iu)\b/i;
-        const medicineFormPattern = /\b(tablet|tablets|tab|capsule|capsules|syrup|drops|injection|cream|gel|ointment|suspension)\b/i;
-        const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price)\b/i;
+        const formPattern = /\b(tablet|tablets|tab|capsule|capsules|syrup|drops|injection|cream|gel|ointment|suspension)\b/i;
+        const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price|ref|code|arr)\b/i;
 
         const candidates = lines.map(function (line, index) {
             let score = 0;
-            if (strengthPattern.test(line)) score += 6;
-            if (medicineFormPattern.test(line)) score += 2;
-            if (/[a-z]{3,}/i.test(line)) score += 1;
-            if (line.length <= 55) score += 1;
-            if (noisePattern.test(line)) score -= 7;
+            const letters = (line.match(/[A-Za-z]/g) || []).length;
+            const digits = (line.match(/\d/g) || []).length;
+
+            if (strengthPattern.test(line)) score += 9;
+            if (formPattern.test(line)) score += 4;
+            if (letters >= 4) score += 2;
+            if (digits >= 1) score += 1;
+            if (line.length <= 45) score += 1;
+            if (noisePattern.test(line)) score -= 8;
+
+            // Prefer a short brand + strength line such as "DOLO 650".
+            if (letters >= 3 && digits >= 1 && line.length <= 28) score += 4;
+
             return { line: line, score: score, index: index };
         });
 
@@ -4419,8 +4502,9 @@ HTML = r"""
         });
 
         const best = candidates[0];
-        if (!best || best.score < 2) return lines[0].slice(0, 100);
-        return best.line.slice(0, 100);
+        if (!best || best.score < 5) return "";
+
+        return normalizeOCRMedicineText(best.line).slice(0, 80);
     }
 
     async function runMedicineOCR() {
@@ -4429,61 +4513,124 @@ HTML = r"""
         clearOcrOutput();
         cameraUsePhotoButton.disabled = true;
         cameraRetakeButton.disabled = true;
-        cameraHint.textContent = "Reading the medicine label. Keep this window open…";
-        cameraResult.textContent = "OCR is reading the captured photo…";
+        cameraHint.textContent =
+            "Enhancing the photo and reading the medicine label. Keep this window open…";
+        cameraResult.textContent = "OCR is analysing the captured photo…";
         cameraResult.classList.add("show");
 
         if (!window.Tesseract) {
-            setOcrProgress(0, "OCR engine could not be loaded. Check your internet connection and try again.");
+            setOcrProgress(
+                0,
+                "OCR engine could not be loaded. Check your internet connection and try again."
+            );
             cameraUsePhotoButton.disabled = false;
             cameraRetakeButton.disabled = false;
             return;
         }
 
         try {
-            const result = await Tesseract.recognize(
-                capturedPhotoDataUrl,
-                "eng",
-                {
-                    logger: function (info) {
-                        if (typeof info.progress === "number") {
-                            const pct = Math.round(info.progress * 100);
-                            const label = info.status === "recognizing text" ? "Recognizing medicine text…" : "Preparing OCR…";
-                            setOcrProgress(pct, label + " " + pct + "%");
+            const images = await prepareOCRImages(capturedPhotoDataUrl);
+            const outputs = [];
+
+            for (let i = 0; i < images.length; i++) {
+                const pass = images[i];
+                const baseProgress = Math.round((i / images.length) * 80);
+
+                setOcrProgress(
+                    baseProgress,
+                    "OCR pass " + (i + 1) + " of " + images.length + "…"
+                );
+
+                const result = await Tesseract.recognize(
+                    pass.data,
+                    "eng",
+                    {
+                        tessedit_pageseg_mode: pass.psm,
+                        logger: function (info) {
+                            if (typeof info.progress === "number") {
+                                const local = Math.round(info.progress * 25);
+                                const total = Math.min(95, baseProgress + local);
+                                const label =
+                                    info.status === "recognizing text"
+                                        ? "Recognizing medicine text…"
+                                        : "Preparing OCR…";
+                                setOcrProgress(
+                                    total,
+                                    label + " (" + (i + 1) + "/" + images.length + ")"
+                                );
+                            }
                         }
                     }
+                );
+
+                const passText =
+                    result && result.data && result.data.text
+                        ? result.data.text.trim()
+                        : "";
+
+                if (passText) {
+                    outputs.push({
+                        text: passText,
+                        confidence:
+                            result && result.data && Number.isFinite(result.data.confidence)
+                                ? result.data.confidence
+                                : 0
+                    });
                 }
-            );
+            }
 
-            const text = (result && result.data && result.data.text || "").trim();
-            const medicineQuery = pickMedicineQuery(text);
+            // Put the strongest OCR text first, while still showing all useful text
+            // so the user can visually verify what the engine read.
+            outputs.sort(function (a, b) {
+                return b.confidence - a.confidence;
+            });
 
-            ocrText.textContent = text || "No readable text was found.";
+            const combinedText = outputs
+                .map(function (item) { return item.text; })
+                .join("\n");
+
+            const medicineQuery = pickMedicineQuery(combinedText);
+
+            ocrText.textContent =
+                combinedText || "No readable text was found.";
             ocrText.classList.add("show");
 
             if (!medicineQuery) {
-                ocrResult.textContent = "Could not identify a medicine name from this photo. Retake it with the medicine name and strength clearly visible.";
+                ocrResult.textContent =
+                    "Could not confidently identify a medicine name. Retake a sharp, well-lit photo with the name and strength clearly visible.";
                 ocrResult.classList.add("show");
-                cameraHint.textContent = "Try a clearer, well-lit photo of the medicine strip or box.";
+                cameraHint.textContent =
+                    "Tip: fill most of the guide with the medicine strip/box and avoid glare or shadows.";
+                setOcrProgress(100, "OCR finished — manual confirmation needed");
                 return;
             }
 
             medicineInput.value = medicineQuery;
             updateClearButton();
-            ocrResult.textContent = "Detected: " + medicineQuery + " — please confirm the name and strength, then tap Search.";
+
+            ocrResult.textContent =
+                "Detected: " + medicineQuery +
+                " — please confirm the medicine name and strength, then tap Search.";
+
             ocrResult.classList.add("show");
-            cameraHint.textContent = "Medicine text detected. Confirm it in the search box before searching prices.";
+            cameraHint.textContent =
+                "Medicine text detected. Confirm it in the search box before searching prices.";
             cameraResult.textContent = "OCR completed successfully.";
             setOcrProgress(100, "OCR complete");
 
             setTimeout(function () {
                 closeCamera();
                 medicineInput.focus();
-            }, 700);
+            }, 900);
+
         } catch (error) {
             console.error("OCR error:", error);
-            setOcrProgress(0, "OCR failed. Please retake a clearer medicine photo and try again.");
-            cameraHint.textContent = "Use a sharp, well-lit photo with the medicine name and strength facing the camera.";
+            setOcrProgress(
+                0,
+                "OCR failed. Please retake a clearer medicine photo and try again."
+            );
+            cameraHint.textContent =
+                "Use a sharp, well-lit photo with the medicine name and strength facing the camera.";
         } finally {
             cameraUsePhotoButton.disabled = false;
             cameraRetakeButton.disabled = false;
