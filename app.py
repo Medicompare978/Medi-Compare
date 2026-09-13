@@ -3395,9 +3395,9 @@ HTML = r"""
 
     // ============================================================
     // STEP COUNTER
-    // Walking detector v9.
-    // v9 keeps v8's strong seated-movement rejection, but becomes more
-    // sensitive AFTER a genuine walking rhythm has been confirmed.
+    // Walking detector v10.1.
+    // Hybrid detector: conservative startup, responsive counting after
+    // walking is confirmed.
 
     const STEP_GOAL = 10000;
     const stepCountElement = document.getElementById("stepCount");
@@ -3431,32 +3431,56 @@ HTML = r"""
     let signalPeakReference = 0;
     let lastMotionAt = 0;
 
-    // Walking detector.
+    // Walking detector v10.1.
+    // Goal: keep v9's walking responsiveness, but separate walking confirmation
+    // from the per-step counter. Once walking is confirmed, do NOT require
+    // every new step to match the previous 2 intervals perfectly.
     const GRAVITY_ALPHA = 0.88;
-    const SIGNAL_ALPHA = 0.45;
-    const NOISE_ALPHA = 0.025;
+    const SIGNAL_ALPHA = 0.38;
+    const NOISE_ALPHA = 0.02;
 
-    // Conservative while starting; more sensitive after walking is confirmed.
-    const MIN_DYNAMIC_PEAK = 0.22;
-    const PEAK_MARGIN = 0.16;
-    const CONFIRMED_MIN_DYNAMIC_PEAK = 0.13;
-    const CONFIRMED_PEAK_MARGIN = 0.10;
+    // Candidate sensitivity.
+    const MIN_DYNAMIC_PEAK = 0.18;
+    const PEAK_MARGIN = 0.12;
+    const CONFIRMED_MIN_DYNAMIC_PEAK = 0.10;
+    const CONFIRMED_PEAK_MARGIN = 0.07;
 
-    const STEP_MIN_INTERVAL_MS = 300;
-    const STEP_MAX_INTERVAL_MS = 1450;
+    // Normal human walking cadence range. These are broad intentionally.
+    const STEP_MIN_INTERVAL_MS = 280;
+    const STEP_MAX_INTERVAL_MS = 1400;
+
+    // Four candidates protect startup from a few random phone movements.
+    // Only the newest confirmed candidate is counted, so startup adds just
+    // one-step latency instead of backfilling all the earlier movement.
     const WALK_CONFIRM_CANDIDATES = 4;
-    const WALK_INTERVAL_TOLERANCE = 0.32;
-    const WALK_AMPLITUDE_TOLERANCE = 0.65;
-    const WALK_START_TIMEOUT_MS = 2000;
-    const WALK_BREAK_TIMEOUT_MS = 1600;
+    const WALK_START_INTERVAL_TOLERANCE = 0.42;
+    const WALK_START_AMPLITUDE_TOLERANCE = 0.80;
+    const WALK_START_TIMEOUT_MS = 1800;
 
-    const DUPLICATE_INTERVAL_FACTOR = 0.48;
+    // Once walking is established, use a rolling cadence baseline instead of
+    // demanding that every pair of steps be almost identical.
+    const WALK_BREAK_TIMEOUT_MS = 1500;
+    const CADENCE_HISTORY = 6;
+    const CADENCE_MIN_RATIO = 0.45;
+    const CADENCE_MAX_RATIO = 1.75;
+    const DUPLICATE_INTERVAL_FACTOR = 0.42;
+
+    // Peak-shape gate. A step candidate should be a real local pulse, not just
+    // a tiny slow drift of the phone.
+    const MIN_PEAK_SHARPNESS = 0.045;
+    const PEAK_SHARPNESS_RATIO = 0.16;
+
+    // Very large isolated spikes are not allowed to immediately establish
+    // walking unless they participate in the repeated cadence pattern.
+    const MAX_START_AMPLITUDE_RATIO = 4.5;
 
     let candidateTimes = [];
     let candidateAmplitudes = [];
     let confirmedWalking = false;
     let lastCandidateTime = 0;
     let lastConfirmedTime = 0;
+    let walkingIntervals = [];
+    let walkingAmplitudes = [];
 
     function updateStepDisplay(force = false) {
         if (!force && displayedStepCount === stepCount) return;
@@ -3474,8 +3498,6 @@ HTML = r"""
         if (numberOfSteps <= 0) return;
         stepCount += numberOfSteps;
         saveSteps();
-        // Keep the value available immediately; the visible UI timer handles
-        // the normal refresh cadence.
     }
 
     function startUiUpdateTimer() {
@@ -3498,73 +3520,110 @@ HTML = r"""
         confirmedWalking = false;
         lastCandidateTime = 0;
         lastConfirmedTime = 0;
+        walkingIntervals = [];
+        walkingAmplitudes = [];
         signalPeakReference = 0;
+    }
+
+    function average(values) {
+        if (!values.length) return 0;
+        return values.reduce((a, b) => a + b, 0) / values.length;
+    }
+
+    function median(values) {
+        if (!values.length) return 0;
+        const sorted = values.slice().sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2
+            ? sorted[middle]
+            : (sorted[middle - 1] + sorted[middle]) / 2;
     }
 
     function cadenceIsRegular(times) {
         if (times.length < 3) return false;
+
         const intervals = [];
         for (let i = 1; i < times.length; i++) {
-            intervals.push(times[i] - times[i - 1]);
+            const interval = times[i] - times[i - 1];
+            if (interval >= STEP_MIN_INTERVAL_MS && interval <= STEP_MAX_INTERVAL_MS) {
+                intervals.push(interval);
+            }
         }
-        const recent = intervals.slice(-2);
-        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-        if (avg < STEP_MIN_INTERVAL_MS || avg > STEP_MAX_INTERVAL_MS) return false;
-        const deviation = Math.max(
-            ...recent.map(value => Math.abs(value - avg) / avg)
-        );
-        return deviation <= WALK_INTERVAL_TOLERANCE;
+
+        if (intervals.length < 2) return false;
+
+        const base = median(intervals.slice(-3));
+        if (!base) return false;
+
+        return intervals.slice(-2).every(function (interval) {
+            return Math.abs(interval - base) / base <= WALK_START_INTERVAL_TOLERANCE;
+        });
     }
 
     function amplitudesAreWalkingLike(amplitudes) {
         if (amplitudes.length < 3) return false;
-        const recent = amplitudes.slice(-3);
-        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-        if (avg <= 0) return false;
-        const deviation = Math.max(
-            ...recent.map(value => Math.abs(value - avg) / avg)
-        );
-        return deviation <= WALK_AMPLITUDE_TOLERANCE;
+
+        const recent = amplitudes.slice(-4);
+        const base = median(recent);
+        if (base <= 0) return false;
+
+        const min = Math.min(...recent);
+        const max = Math.max(...recent);
+        return (max - min) / base <= WALK_START_AMPLITUDE_TOLERANCE;
+    }
+
+    function pushLimited(list, value, maxLength) {
+        list.push(value);
+        if (list.length > maxLength) list.shift();
+    }
+
+    function confirmWalking(now) {
+        confirmedWalking = true;
+        walkingIntervals = [];
+        walkingAmplitudes = candidateAmplitudes.slice(-4);
+
+        for (let i = Math.max(1, candidateTimes.length - 3);
+             i < candidateTimes.length; i++) {
+            pushLimited(
+                walkingIntervals,
+                candidateTimes[i] - candidateTimes[i - 1],
+                CADENCE_HISTORY
+            );
+        }
+
+        // Count the current walking peak immediately. Earlier peaks were only
+        // evidence for confirmation. This avoids the large v8/v10-style delay.
+        addConfirmedSteps(1);
+        lastConfirmedTime = now;
     }
 
     function registerCandidate(now, amplitude) {
-        let missedSteps = 0;
-
         if (lastCandidateTime) {
             const interval = now - lastCandidateTime;
 
             if (interval < STEP_MIN_INTERVAL_MS) return;
 
             if (interval > STEP_MAX_INTERVAL_MS) {
+                resetWalkingDetector();
+            }
+        }
+
+        // While sitting/holding the phone, a few random movements should not
+        // start a walking session. Keep startup conservative and require a
+        // repeated cadence + reasonably consistent pulse size.
+        if (!confirmedWalking && candidateTimes.length) {
+            const previousAmplitude = candidateAmplitudes[candidateAmplitudes.length - 1];
+            const interval = now - lastCandidateTime;
+
+            if (interval < STEP_MIN_INTERVAL_MS || interval > STEP_MAX_INTERVAL_MS) {
                 candidateTimes = [];
                 candidateAmplitudes = [];
-                confirmedWalking = false;
-            } else if (confirmedWalking && candidateTimes.length >= 3) {
-                const recentIntervals = [];
-                for (let i = Math.max(1, candidateTimes.length - 3);
-                     i < candidateTimes.length; i++) {
-                    recentIntervals.push(
-                        candidateTimes[i] - candidateTimes[i - 1]
-                    );
-                }
-
-                if (recentIntervals.length) {
-                    const avgInterval =
-                        recentIntervals.reduce((a, b) => a + b, 0) /
-                        recentIntervals.length;
-
-                    if (interval < avgInterval * DUPLICATE_INTERVAL_FACTOR) {
-                        return;
-                    }
-
-                    // If the sensor missed one regular walking peak, a gap
-                    // close to 2x the normal cadence is strong evidence that
-                    // one step was missed. Recover at most two steps so a
-                    // temporary sensor dropout cannot create a huge jump.
-                    const cadenceRatio = interval / avgInterval;
-                    if (cadenceRatio >= 1.60 && cadenceRatio <= 2.45) {
-                        missedSteps = Math.min(2, Math.max(0, Math.round(cadenceRatio) - 1));
-                    }
+                lastCandidateTime = 0;
+            } else if (candidateAmplitudes.length >= 2 && previousAmplitude > 0) {
+                const amplitudeRatio = amplitude / previousAmplitude;
+                if (amplitudeRatio > MAX_START_AMPLITUDE_RATIO ||
+                    amplitudeRatio < (1 / MAX_START_AMPLITUDE_RATIO)) {
+                    return;
                 }
             }
         }
@@ -3578,25 +3637,53 @@ HTML = r"""
             candidateAmplitudes.shift();
         }
 
-        // Startup remains conservative: require a real rhythmic pattern.
         if (!confirmedWalking &&
             candidateTimes.length >= WALK_CONFIRM_CANDIDATES &&
             cadenceIsRegular(candidateTimes) &&
             amplitudesAreWalkingLike(candidateAmplitudes)) {
-
-            confirmedWalking = true;
-
-            // Count only the newly confirmed peak. Earlier peaks are evidence.
-            addConfirmedSteps(1);
-            lastConfirmedTime = now;
+            confirmWalking(now);
             return;
         }
 
-        // After confirmation, count each cadence-valid peak. This is the key
-        // v9 change that fixes v8's heavy under-counting.
-        if (confirmedWalking && candidateTimes.length >= 3 &&
-            cadenceIsRegular(candidateTimes)) {
-            addConfirmedSteps(1 + missedSteps);
+        if (!confirmedWalking) return;
+
+        // From here on, the detector is intentionally permissive. Real walking
+        // is not perfectly metronomic, so use a rolling median cadence instead
+        // of v9's strict two-interval comparison.
+        if (candidateTimes.length >= 2) {
+            const interval = now - candidateTimes[candidateTimes.length - 2];
+
+            if (interval < STEP_MIN_INTERVAL_MS || interval > STEP_MAX_INTERVAL_MS) {
+                return;
+            }
+
+            const cadenceBase = median(walkingIntervals.slice(-CADENCE_HISTORY));
+
+            if (cadenceBase > 0) {
+                if (interval < cadenceBase * DUPLICATE_INTERVAL_FACTOR) return;
+
+                const ratio = interval / cadenceBase;
+                if (ratio < CADENCE_MIN_RATIO || ratio > CADENCE_MAX_RATIO) {
+                    return;
+                }
+            }
+
+            pushLimited(walkingIntervals, interval, CADENCE_HISTORY);
+            pushLimited(walkingAmplitudes, amplitude, CADENCE_HISTORY);
+
+            // Only infer one missed step when the gap is clearly close to 2x
+            // the established cadence. Never infer from a vague long gap.
+            if (cadenceBase > 0) {
+                const ratio = interval / cadenceBase;
+                if (ratio >= 1.75 && ratio <= 2.25) {
+                    addConfirmedSteps(2);
+                } else {
+                    addConfirmedSteps(1);
+                }
+            } else {
+                addConfirmedSteps(1);
+            }
+
             lastConfirmedTime = now;
         }
     }
@@ -3618,8 +3705,6 @@ HTML = r"""
                 Number(linear.y) ** 2 +
                 Number(linear.z) ** 2
             );
-            // Some Android/browser implementations expose a nominal linear
-            // vector but leave it effectively empty. Fall back in that case.
             if (lm > 0.08) return { vector: linear, linear: true };
         }
 
@@ -3679,9 +3764,9 @@ HTML = r"""
             SIGNAL_ALPHA * signalMagnitude +
             (1 - SIGNAL_ALPHA) * filteredSignal;
 
-        // Slowly follow the quiet/background movement. Large transient peaks
-        // should not immediately raise the threshold.
-        const quietSignal = Math.min(filteredSignal, noiseFloor + 0.35);
+        // Track quiet/background movement slowly so normal walking peaks do
+        // not immediately raise their own threshold.
+        const quietSignal = Math.min(filteredSignal, noiseFloor + 0.30);
         noiseFloor =
             NOISE_ALPHA * quietSignal +
             (1 - NOISE_ALPHA) * noiseFloor;
@@ -3693,24 +3778,29 @@ HTML = r"""
         if (isPeak) {
             const amplitude = previousSignal;
             const dynamicHeight = amplitude - noiseFloor;
-
-            // Adaptive threshold: easy enough for normal walking, but requires
-            // a real transient above the current background movement.
             const minimumPeak = confirmedWalking
                 ? CONFIRMED_MIN_DYNAMIC_PEAK
                 : MIN_DYNAMIC_PEAK;
-
             const peakMargin = confirmedWalking
                 ? CONFIRMED_PEAK_MARGIN
                 : PEAK_MARGIN;
-
             const adaptiveThreshold = Math.max(
                 minimumPeak,
                 peakMargin + noiseFloor
             );
 
+            // Local peak sharpness rejects slow hand/phone drifts while keeping
+            // ordinary walking pulses responsive.
+            const localLow = Math.min(previousPreviousSignal, filteredSignal);
+            const peakSharpness = previousSignal - localLow;
+            const requiredSharpness = Math.max(
+                MIN_PEAK_SHARPNESS,
+                dynamicHeight * PEAK_SHARPNESS_RATIO
+            );
+
             if (dynamicHeight >= minimumPeak &&
-                amplitude >= adaptiveThreshold) {
+                amplitude >= adaptiveThreshold &&
+                peakSharpness >= requiredSharpness) {
                 registerCandidate(now, dynamicHeight);
                 signalPeakReference = dynamicHeight;
             }
