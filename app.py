@@ -4386,97 +4386,36 @@ HTML = r"""
     }
 
     function cleanOcrLine(line) {
-        return line
+        return String(line || "")
             .replace(/[|{}\[\]<>~`^*_#=]+/g, " ")
             .replace(/\s+/g, " ")
             .trim();
     }
 
-    function prepareOCRImages(dataUrl) {
-        return new Promise(function (resolve) {
-            const image = new Image();
-
-            image.onload = function () {
-                const sourceWidth = image.naturalWidth || 1200;
-                const sourceHeight = image.naturalHeight || 800;
-                const maxWidth = 1800;
-                const scale = Math.min(1.6, maxWidth / Math.max(1, sourceWidth));
-                const width = Math.max(900, Math.round(sourceWidth * scale));
-                const height = Math.max(600, Math.round(sourceHeight * scale));
-
-                function render(mode, crop) {
-                    const canvas = document.createElement("canvas");
-                    const sx = crop ? Math.round(width * 0.08) : 0;
-                    const sy = crop ? Math.round(height * 0.18) : 0;
-                    const sw = crop ? Math.round(width * 0.84) : width;
-                    const sh = crop ? Math.round(height * 0.64) : height;
-                    canvas.width = sw;
-                    canvas.height = sh;
-
-                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
-
-                    if (mode === "original") {
-                        return canvas.toDataURL("image/jpeg", 0.96);
-                    }
-
-                    const imageData = ctx.getImageData(0, 0, sw, sh);
-                    const data = imageData.data;
-
-                    for (let i = 0; i < data.length; i += 4) {
-                        const gray =
-                            0.299 * data[i] +
-                            0.587 * data[i + 1] +
-                            0.114 * data[i + 2];
-
-                        let value;
-                        if (mode === "gray") {
-                            // Stronger contrast for faded labels and paper.
-                            value = Math.max(0, Math.min(255, ((gray - 128) * 1.75) + 128));
-                        } else if (mode === "threshold") {
-                            value = gray > 160 ? 255 : 0;
-                        } else if (mode === "soft-threshold") {
-                            value = gray > 145 ? 255 : (gray < 118 ? 0 : gray);
-                        } else {
-                            value = 255 - gray;
-                        }
-
-                        data[i] = value;
-                        data[i + 1] = value;
-                        data[i + 2] = value;
-                    }
-
-                    ctx.putImageData(imageData, 0, 0);
-                    return canvas.toDataURL("image/png");
-                }
-
-                // Center-cropped passes are especially useful when the medicine
-                // name is written/printed in the middle of the camera guide.
-                resolve([
-                    { name: "full-original", data: render("original", false), psm: "6" },
-                    { name: "center-original", data: render("original", true), psm: "7" },
-                    { name: "center-gray", data: render("gray", true), psm: "7" },
-                    { name: "center-threshold", data: render("threshold", true), psm: "7" },
-                    { name: "center-soft", data: render("soft-threshold", true), psm: "11" },
-                    { name: "center-inverted", data: render("invert", true), psm: "7" }
-                ]);
-            };
-
-            image.onerror = function () {
-                resolve([{ name: "original", data: dataUrl, psm: "6" }]);
-            };
-
-            image.src = dataUrl;
-        });
-    }
-
     function normalizeOCRMedicineText(text) {
-        return cleanOcrLine(text)
+        let clean = cleanOcrLine(text)
             .replace(/[|]/g, "I")
-            .replace(/\b(\d+)\s*[oO]\s*(mg|mcg|g|ml|iu)\b/gi, "$1 0 $2")
+            .replace(/[“”‘’]/g, "")
+            .replace(/\b(\d+)\s*[oO]\s*(mg|mcg|µg|ug|g|ml|iu)\b/gi, "$1 0 $2")
             .replace(/\s+/g, " ")
             .trim();
+
+        // Repair common OCR confusions inside medicine-like words only.
+        clean = clean.split(/\s+/).map(function (token) {
+            const upper = token.toUpperCase();
+            if (/[A-Z]/.test(upper) && /\d/.test(upper) && token.length >= 3) {
+                return token
+                    .replace(/0/g, "O")
+                    .replace(/1/g, "I")
+                    .replace(/5/g, "S")
+                    .replace(/8/g, "B");
+            }
+            return token;
+        }).join(" ");
+
+        // Join OCR's frequent single-letter splitting: D O L O 650 -> DOLO 650.
+        clean = clean.replace(/\b([A-Za-z])\s+([A-Za-z])\s+([A-Za-z])\s+([A-Za-z])\b/g, "$1$2$3$4");
+        return clean.trim();
     }
 
     function scoreMedicineLine(line) {
@@ -4491,34 +4430,120 @@ HTML = r"""
         const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price|ref|code|arr|cl|ew|ri|on)\b/i;
 
         let score = 0;
-        if (strengthPattern.test(clean)) score += 12;
+        if (strengthPattern.test(clean)) score += 14;
         if (formPattern.test(clean)) score += 3;
         if (letters >= 4) score += 2;
         if (digits >= 1) score += 2;
         if (words.length <= 5) score += 2;
         if (clean.length <= 28) score += 3;
-        if (noisePattern.test(clean)) score -= 12;
+        if (/^[A-Z][A-Z0-9+\-/. ]{2,35}$/i.test(clean)) score += 1;
+        if (noisePattern.test(clean)) score -= 14;
         if (/[^A-Za-z0-9 .+\-/()%µ]/.test(clean)) score -= 3;
-
         return score;
     }
 
-    function pickMedicineQuery(text) {
-        const lines = text
+    function extractMedicineCandidates(text) {
+        const rawLines = String(text || "")
             .split(/\r?\n/)
             .map(cleanOcrLine)
-            .filter(function (line) { return line.length >= 3 && line.length <= 80; });
+            .filter(function (line) { return line.length >= 3 && line.length <= 100; });
 
-        const candidates = lines.map(function (line, index) {
-            return { line: normalizeOCRMedicineText(line), score: scoreMedicineLine(line), index: index };
-        }).filter(function (item) { return item.score >= 5; });
+        const candidates = [];
 
-        candidates.sort(function (a, b) {
-            return b.score - a.score || a.index - b.index;
+        rawLines.forEach(function (line, index) {
+            const normalized = normalizeOCRMedicineText(line);
+            candidates.push({ line: normalized, score: scoreMedicineLine(normalized), index: index });
+
+            // Also test compact adjacent token groups because OCR may split
+            // the brand and strength across separate lines/words.
+            const tokens = normalized.split(/\s+/).filter(Boolean);
+            for (let size = 2; size <= Math.min(5, tokens.length); size++) {
+                for (let j = 0; j + size <= tokens.length; j++) {
+                    const group = tokens.slice(j, j + size).join(" ");
+                    candidates.push({ line: group, score: scoreMedicineLine(group) + 1, index: index + j / 100 });
+                }
+            }
         });
 
-        if (!candidates.length) return "";
-        return candidates[0].line.slice(0, 80);
+        return candidates
+            .filter(function (item) { return item.score >= 5; })
+            .sort(function (a, b) { return b.score - a.score || a.index - b.index; });
+    }
+
+    function pickMedicineQuery(text) {
+        const candidates = extractMedicineCandidates(text);
+        return candidates.length ? candidates[0].line.slice(0, 80) : "";
+    }
+
+    function prepareOCRImages(dataUrl) {
+        return new Promise(function (resolve) {
+            const image = new Image();
+            image.onload = function () {
+                const sourceWidth = image.naturalWidth || 1200;
+                const sourceHeight = image.naturalHeight || 800;
+                const maxWidth = 2000;
+                const scale = Math.min(1.9, maxWidth / Math.max(1, sourceWidth));
+                const width = Math.max(1000, Math.round(sourceWidth * scale));
+                const height = Math.max(700, Math.round(sourceHeight * scale));
+
+                function render(mode, cropType) {
+                    let sx = 0, sy = 0, sw = width, sh = height;
+                    if (cropType === "center") {
+                        sx = Math.round(width * 0.05); sy = Math.round(height * 0.15);
+                        sw = Math.round(width * 0.90); sh = Math.round(height * 0.70);
+                    } else if (cropType === "middle") {
+                        sx = Math.round(width * 0.03); sy = Math.round(height * 0.28);
+                        sw = Math.round(width * 0.94); sh = Math.round(height * 0.44);
+                    } else if (cropType === "wide") {
+                        sx = Math.round(width * 0.02); sy = Math.round(height * 0.08);
+                        sw = Math.round(width * 0.96); sh = Math.round(height * 0.84);
+                    }
+
+                    const canvas = document.createElement("canvas");
+                    canvas.width = sw; canvas.height = sh;
+                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = "high";
+                    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
+
+                    if (mode === "original") return canvas.toDataURL("image/jpeg", 0.97);
+
+                    const imageData = ctx.getImageData(0, 0, sw, sh);
+                    const data = imageData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                        let value;
+                        if (mode === "gray") {
+                            value = Math.max(0, Math.min(255, ((gray - 128) * 2.05) + 128));
+                        } else if (mode === "threshold") {
+                            value = gray > 168 ? 255 : 0;
+                        } else if (mode === "adaptive") {
+                            // A lightweight local-ish threshold that handles shadows better than one global cutoff.
+                            value = gray > 145 ? 255 : (gray < 105 ? 0 : 255);
+                        } else {
+                            value = 255 - gray;
+                        }
+                        data[i] = data[i + 1] = data[i + 2] = value;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    return canvas.toDataURL("image/png");
+                }
+
+                resolve([
+                    { name: "full-original", data: render("original", "wide"), psm: "6" },
+                    { name: "center-original", data: render("original", "center"), psm: "7" },
+                    { name: "center-gray", data: render("gray", "center"), psm: "7" },
+                    { name: "center-threshold", data: render("threshold", "center"), psm: "7" },
+                    { name: "middle-gray", data: render("gray", "middle"), psm: "7" },
+                    { name: "middle-adaptive", data: render("adaptive", "middle"), psm: "11" },
+                    { name: "center-inverted", data: render("invert", "center"), psm: "7" }
+                ]);
+            };
+            image.onerror = function () {
+                resolve([{ name: "original", data: dataUrl, psm: "6" }]);
+            };
+            image.src = dataUrl;
+        });
     }
 
     async function runMedicineOCR() {
@@ -4527,16 +4552,18 @@ HTML = r"""
         clearOcrOutput();
         cameraUsePhotoButton.disabled = true;
         cameraRetakeButton.disabled = true;
-        cameraHint.textContent =
-            "Enhancing the photo and reading the medicine label. Keep this window open…";
+        cameraHint.textContent = "Enhancing the photo and reading the medicine label. Keep this window open…";
         cameraResult.textContent = "OCR is analysing the captured photo…";
         cameraResult.classList.add("show");
 
+        // Do not leave an older server-side search visually mixed with a new scan.
+        document.querySelectorAll(".search-title, .pharmacy-section, .compare-prices-section").forEach(function (el) {
+            el.dataset.ocrHidden = "1";
+            el.style.display = "none";
+        });
+
         if (!window.Tesseract) {
-            setOcrProgress(
-                0,
-                "OCR engine could not be loaded. Check your internet connection and try again."
-            );
+            setOcrProgress(0, "OCR engine could not be loaded. Check your internet connection and try again.");
             cameraUsePhotoButton.disabled = false;
             cameraRetakeButton.disabled = false;
             return;
@@ -4548,132 +4575,84 @@ HTML = r"""
 
             for (let i = 0; i < images.length; i++) {
                 const pass = images[i];
-                const baseProgress = Math.round((i / images.length) * 78);
+                const baseProgress = Math.round((i / images.length) * 82);
+                setOcrProgress(baseProgress, "OCR pass " + (i + 1) + " of " + images.length + "…");
 
-                setOcrProgress(
-                    baseProgress,
-                    "OCR pass " + (i + 1) + " of " + images.length + "…"
-                );
-
-                const result = await Tesseract.recognize(
-                    pass.data,
-                    "eng",
-                    {
-                        tessedit_pageseg_mode: pass.psm,
-                        logger: function (info) {
-                            if (typeof info.progress === "number") {
-                                const local = Math.round(info.progress * 25);
-                                const total = Math.min(95, baseProgress + local);
-                                const label =
-                                    info.status === "recognizing text"
-                                        ? "Recognizing medicine text…"
-                                        : "Preparing OCR…";
-                                setOcrProgress(
-                                    total,
-                                    label + " (" + (i + 1) + "/" + images.length + ")"
-                                );
-                            }
+                const result = await Tesseract.recognize(pass.data, "eng", {
+                    tessedit_pageseg_mode: pass.psm,
+                    preserve_interword_spaces: "1",
+                    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-+/.()%µ ",
+                    logger: function (info) {
+                        if (typeof info.progress === "number") {
+                            const local = Math.round(info.progress * 16);
+                            const total = Math.min(96, baseProgress + local);
+                            const label = info.status === "recognizing text" ? "Recognizing medicine text…" : "Preparing OCR…";
+                            setOcrProgress(total, label + " (" + (i + 1) + "/" + images.length + ")");
                         }
                     }
-                );
+                });
 
-                const passText =
-                    result && result.data && result.data.text
-                        ? result.data.text.trim()
-                        : "";
-
+                const passText = result && result.data && result.data.text ? result.data.text.trim() : "";
                 if (passText) {
                     outputs.push({
                         text: passText,
-                        confidence:
-                            result && result.data && Number.isFinite(result.data.confidence)
-                                ? result.data.confidence
-                                : 0,
+                        confidence: result && result.data && Number.isFinite(result.data.confidence) ? result.data.confidence : 0,
                         pass: pass.name
                     });
                 }
             }
 
-            // Put the strongest OCR text first, while still showing all useful text
-            // so the user can visually verify what the engine read.
-            outputs.sort(function (a, b) {
-                return b.confidence - a.confidence;
-            });
+            outputs.sort(function (a, b) { return b.confidence - a.confidence; });
+            const combinedText = outputs.map(function (item) { return item.text; }).join("\n");
 
-            const combinedText = outputs
-                .map(function (item) { return item.text; })
-                .join("\n");
-
-            // Vote across OCR passes instead of trusting one noisy pass.
             const candidateMap = {};
             outputs.forEach(function (item) {
-                const localLines = item.text
-                    .split(/\r?\n/)
-                    .map(cleanOcrLine)
-                    .filter(function (line) { return line.length >= 3; });
-
-                localLines.forEach(function (line) {
-                    const normalized = normalizeOCRMedicineText(line);
-                    const score = scoreMedicineLine(normalized);
-                    if (score < 5) return;
+                extractMedicineCandidates(item.text).slice(0, 12).forEach(function (candidate) {
+                    const normalized = normalizeOCRMedicineText(candidate.line);
+                    if (!normalized) return;
                     const key = normalized.toUpperCase();
-                    if (!candidateMap[key]) {
-                        candidateMap[key] = { text: normalized, score: 0, hits: 0 };
-                    }
-                    candidateMap[key].score += score + Math.min(8, item.confidence / 12);
+                    if (!candidateMap[key]) candidateMap[key] = { text: normalized, score: 0, hits: 0, bestConfidence: 0 };
+                    candidateMap[key].score += candidate.score + Math.min(10, item.confidence / 10);
                     candidateMap[key].hits += 1;
+                    candidateMap[key].bestConfidence = Math.max(candidateMap[key].bestConfidence, item.confidence);
                 });
             });
 
-            const votedCandidates = Object.keys(candidateMap)
-                .map(function (key) { return candidateMap[key]; })
-                .sort(function (a, b) {
-                    return b.hits - a.hits || b.score - a.score;
-                });
+            const votedCandidates = Object.keys(candidateMap).map(function (key) { return candidateMap[key]; }).sort(function (a, b) {
+                return b.hits - a.hits || b.score - a.score || b.bestConfidence - a.bestConfidence;
+            });
 
-            const medicineQuery = votedCandidates.length
-                ? votedCandidates[0].text.slice(0, 80)
-                : pickMedicineQuery(combinedText);
+            const top = votedCandidates[0];
+            const medicineQuery = top ? top.text.slice(0, 80) : pickMedicineQuery(combinedText);
+            const strongEnough = !!top && top.score >= 9 && (top.hits >= 2 || top.bestConfidence >= 55);
 
             ocrText.textContent = combinedText || "No readable text was found.";
             ocrText.classList.add("show");
 
-            if (!medicineQuery) {
-                ocrResult.textContent =
-                    "Could not confidently identify a medicine name. Retake a sharp, well-lit photo with the name and strength clearly visible.";
+            if (!medicineQuery || !strongEnough) {
+                ocrResult.textContent = "Could not confidently identify a medicine name. Please retake a sharp, well-lit photo with the medicine name and strength clearly visible.";
                 ocrResult.classList.add("show");
-                cameraHint.textContent =
-                    "Tip: fill most of the guide with the medicine strip/box and avoid glare or shadows.";
-                setOcrProgress(100, "OCR finished — manual confirmation needed");
+                cameraHint.textContent = "Tip: keep the medicine name large in the guide, avoid glare, and capture the strip/box straight-on.";
+                setOcrProgress(100, "OCR finished — confidence too low");
                 return;
             }
 
             medicineInput.value = medicineQuery;
             updateClearButton();
-
-            ocrResult.textContent =
-                "Possible medicine: " + medicineQuery +
-                " — please verify the name and strength before tapping Search.";
-
+            ocrResult.textContent = "Possible medicine: " + medicineQuery + " — please verify the name and strength before tapping Search.";
             ocrResult.classList.add("show");
-            cameraHint.textContent =
-                "Medicine text detected. Confirm it in the search box before searching prices.";
-            cameraResult.textContent = "OCR completed successfully.";
+            cameraHint.textContent = "Medicine text detected. Confirm the name and strength before searching prices.";
+            cameraResult.textContent = "OCR completed — please verify the result.";
             setOcrProgress(100, "OCR complete");
 
             setTimeout(function () {
                 closeCamera();
                 medicineInput.focus();
             }, 900);
-
         } catch (error) {
             console.error("OCR error:", error);
-            setOcrProgress(
-                0,
-                "OCR failed. Please retake a clearer medicine photo and try again."
-            );
-            cameraHint.textContent =
-                "Use a sharp, well-lit photo with the medicine name and strength facing the camera.";
+            setOcrProgress(0, "OCR failed. Please retake a clearer medicine photo and try again.");
+            cameraHint.textContent = "Use a sharp, well-lit photo with the medicine name and strength facing the camera.";
         } finally {
             cameraUsePhotoButton.disabled = false;
             cameraRetakeButton.disabled = false;
