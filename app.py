@@ -3498,9 +3498,6 @@ HTML = r"""
         if (numberOfSteps <= 0) return;
         stepCount += numberOfSteps;
         saveSteps();
-        // Update the visible counter immediately. Do not wait for the
-        // periodic UI timer, because mobile browsers may throttle timers.
-        updateStepDisplay(true);
     }
 
     function startUiUpdateTimer() {
@@ -3598,8 +3595,6 @@ HTML = r"""
         // evidence for confirmation. This avoids the large v8/v10-style delay.
         addConfirmedSteps(1);
         lastConfirmedTime = now;
-        stepStatus.textContent =
-            "Walking detected • counting steps";
     }
 
     function registerCandidate(now, amplitude) {
