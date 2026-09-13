@@ -4118,34 +4118,45 @@ HTML = r"""
 
         // Pull the currently generated diet result from the visible Diet section.
         // This keeps the PDF aligned with exactly what the user generated.
-        const dietSection =
-            document.getElementById("dietSection") ||
-            document.querySelector(".diet-section") ||
-            document.querySelector("[data-section='diet']");
-
-        let source = dietSection;
-        if (!source) {
-            // Fallback: find the result card containing the generated diet.
-            source =
-                document.querySelector(".diet-result.show") ||
-                document.querySelector(".diet-result");
+        // The actual Diet container in the app is #dietPanel.
+        // Build a clean printable chart from the currently generated values
+        // instead of cloning the interactive form/buttons.
+        const dietPanel = document.getElementById("dietPanel");
+        const dietResult = document.getElementById("dietResult");
+        if (!dietPanel || !dietResult || !dietResult.classList.contains("show")) {
+            return false;
         }
 
-        if (!source) return false;
-
-        // Clone only the generated diet content; strip interactive controls.
-        const clone = source.cloneNode(true);
-        clone.querySelectorAll("button, input, select, textarea, .diet-download-button")
-            .forEach(function (el) { el.remove(); });
+        const profileText = document.getElementById("dietProfile")?.textContent?.trim() || "";
+        const breakfast = document.getElementById("dietBreakfast")?.textContent?.trim() || "";
+        const lunch = document.getElementById("dietLunch")?.textContent?.trim() || "";
+        const dinner = document.getElementById("dietDinner")?.textContent?.trim() || "";
 
         printArea.innerHTML = `
-            <h1>MediCompare — Healthy Diet Guide</h1>
-            <p>General healthy eating guide generated from your entered details.</p>
-            ${clone.innerHTML}
+            <div class="diet-pdf-header">
+                <div class="diet-pdf-icon">🥗</div>
+                <h1>MediCompare</h1>
+                <h2>Healthy Diet Guide</h2>
+                <p>General healthy eating guide generated from your entered details.</p>
+            </div>
+
+            <div class="diet-pdf-profile">
+                <strong>Your Profile</strong>
+                <div>${escapeDietPdfText(profileText)}</div>
+            </div>
+
+            <div class="diet-pdf-meal"><strong>🌅 Breakfast</strong><p>${escapeDietPdfText(breakfast)}</p></div>
+            <div class="diet-pdf-meal"><strong>🍎 Mid-Morning</strong><p>One fruit or a small handful of unsalted nuts.</p></div>
+            <div class="diet-pdf-meal"><strong>🍛 Lunch</strong><p>${escapeDietPdfText(lunch)}</p></div>
+            <div class="diet-pdf-meal"><strong>☕ Evening</strong><p>Fruit, sprouts, curd or another light snack.</p></div>
+            <div class="diet-pdf-meal"><strong>🌙 Dinner</strong><p>${escapeDietPdfText(dinner)}</p></div>
+            <div class="diet-pdf-meal"><strong>💧 Hydration</strong><p>Drink water regularly through the day and with meals according to your thirst and routine.</p></div>
+
             <div class="diet-pdf-note">
                 <strong>Important:</strong> This is a general wellness guide, not a
-                medical prescription or a substitute for advice from a qualified
-                healthcare professional.
+                medical or therapeutic diet prescription. Individual nutritional
+                needs can vary. For medical conditions or therapeutic diets,
+                consult a qualified healthcare professional or registered dietitian.
             </div>
         `;
 
@@ -5032,22 +5043,8 @@ HTML = r"""
             "Disclaimer: General healthy-diet guide only; not a medical or therapeutic diet prescription.";
     });
 
-    dietDownload.addEventListener("click", function () {
-        if (!lastDietText) {
-            dietGenerate.click();
-            if (!lastDietText) return;
-        }
-
-        const blob = new Blob([lastDietText], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "MediCompare_Diet_Chart.txt";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-    });
+    // Download button now uses the real PDF print flow only.
+    dietDownload.addEventListener("click", downloadDietChartAsPDF);
 
 </script>
 
