@@ -2633,6 +2633,290 @@ HTML = r"""
                 height: 210px;
             }
         }
+
+
+        /* ============================================================
+           BOTTOM APP NAVIGATION + SECTION MODES
+           Keeps the existing MediCompare visual design intact.
+        ============================================================ */
+        body {
+            padding-bottom: 92px;
+        }
+
+        .app-bottom-nav {
+            position: fixed;
+            left: 50%;
+            bottom: 10px;
+            transform: translateX(-50%);
+            width: min(680px, calc(100% - 20px));
+            z-index: 1000;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            padding: 7px;
+            background: rgba(255,255,255,0.97);
+            border: 1px solid rgba(8,127,91,0.10);
+            border-radius: 22px;
+            box-shadow: 0 10px 30px rgba(20,70,55,0.18);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .app-nav-button {
+            border: 0;
+            background: transparent;
+            color: #5f706b;
+            min-height: 66px;
+            border-radius: 17px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            cursor: pointer;
+            font: inherit;
+            font-weight: 700;
+            transition: background .25s ease, color .25s ease, transform .18s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .app-nav-button:active {
+            transform: scale(.97);
+        }
+
+        .app-nav-button .nav-icon {
+            font-size: 27px;
+            line-height: 1;
+        }
+
+        .app-nav-button .nav-label {
+            font-size: 14px;
+            line-height: 1.1;
+        }
+
+        .app-nav-button.active {
+            background: #e8f8f2;
+            color: #087f5b;
+        }
+
+        .app-nav-button.active::after {
+            content: "";
+            width: 62%;
+            height: 4px;
+            border-radius: 999px;
+            background: #087f5b;
+            margin-top: 1px;
+        }
+
+        .diet-panel {
+            display: none;
+            animation: navPanelIn .35s ease both;
+        }
+
+        body.diet-mode .diet-panel {
+            display: block;
+        }
+
+        body.diet-mode .main-content-for-nav {
+            display: none;
+        }
+
+        body.step-mode .main-content-for-nav > .search-form,
+        body.step-mode .main-content-for-nav > .search-status,
+        body.step-mode .main-content-for-nav > .search-scan,
+        body.step-mode .main-content-for-nav > .search-tip,
+        body.step-mode .main-content-for-nav > .warning,
+        body.step-mode .main-content-for-nav > .error,
+        body.step-mode .main-content-for-nav > .search-title,
+        body.step-mode .main-content-for-nav > .pharmacy-section,
+        body.step-mode .main-content-for-nav > .empty,
+        body.step-mode .main-content-for-nav > .footer-note {
+            display: none !important;
+        }
+
+        body.step-mode .main-content-for-nav .pre-search-animations {
+            display: block !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            animation: navPanelIn .35s ease both;
+        }
+
+        body.step-mode .main-content-for-nav .step-counter,
+        body.step-mode .main-content-for-nav .health-tips,
+        body.step-mode .main-content-for-nav .price-compare-animation {
+            display: flex;
+        }
+
+        body.step-mode .main-content-for-nav .step-counter {
+            animation: navPanelIn .35s ease both;
+        }
+
+        body.step-mode .main-content-for-nav .health-tips,
+        body.step-mode .main-content-for-nav .price-compare-animation {
+            animation: navPanelIn .42s ease both;
+        }
+
+        body.buy-mode .main-content-for-nav {
+            display: block;
+            animation: navPanelIn .30s ease both;
+        }
+
+        @keyframes navPanelIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .diet-card {
+            background: linear-gradient(135deg, #f5fffb, #eef9f5);
+            border: 1px solid #d7eee5;
+            border-radius: 24px;
+            padding: 24px 20px;
+            box-shadow: 0 8px 24px rgba(20,70,55,0.07);
+            margin-top: 18px;
+        }
+
+        .diet-heading {
+            text-align: center;
+            color: #087f5b;
+            font-size: clamp(24px, 5vw, 34px);
+            margin: 4px 0 8px;
+        }
+
+        .diet-subheading {
+            text-align: center;
+            color: #687873;
+            margin: 0 0 22px;
+            font-size: 15px;
+        }
+
+        .diet-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .diet-field label {
+            display: block;
+            font-weight: 700;
+            color: #31564b;
+            margin: 0 0 7px;
+        }
+
+        .diet-field input,
+        .diet-field select {
+            width: 100%;
+            border: 1px solid #cfe5dc;
+            border-radius: 14px;
+            padding: 14px 13px;
+            font-size: 16px;
+            background: white;
+            color: #20312c;
+            outline: none;
+        }
+
+        .diet-field input:focus,
+        .diet-field select:focus {
+            border-color: #0ca678;
+            box-shadow: 0 0 0 3px rgba(12,166,120,.12);
+        }
+
+        .diet-full {
+            grid-column: 1 / -1;
+        }
+
+        .diet-generate {
+            width: 100%;
+            margin-top: 18px;
+            border: 0;
+            border-radius: 15px;
+            min-height: 52px;
+            background: #087f5b;
+            color: white;
+            font-size: 17px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .diet-result {
+            display: none;
+            margin-top: 20px;
+            background: white;
+            border: 1px solid #d9ece5;
+            border-radius: 20px;
+            padding: 20px;
+            animation: navPanelIn .35s ease both;
+        }
+
+        .diet-result.show {
+            display: block;
+        }
+
+        .diet-result h3 {
+            color: #087f5b;
+            text-align: center;
+            margin: 0 0 8px;
+        }
+
+        .diet-profile {
+            text-align: center;
+            color: #687873;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .diet-meal {
+            padding: 13px 0;
+            border-bottom: 1px solid #edf3f0;
+        }
+
+        .diet-meal:last-of-type {
+            border-bottom: 0;
+        }
+
+        .diet-meal strong {
+            display: block;
+            color: #31564b;
+            margin-bottom: 4px;
+        }
+
+        .diet-meal span {
+            color: #5f706b;
+            line-height: 1.5;
+        }
+
+        .diet-disclaimer {
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 12px;
+            background: #fff8d9;
+            color: #75631b;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .diet-download {
+            width: 100%;
+            margin-top: 14px;
+            border: 0;
+            border-radius: 14px;
+            min-height: 48px;
+            background: #e8f8f2;
+            color: #087f5b;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        @media (max-width: 560px) {
+            body { padding-bottom: 88px; }
+            .app-bottom-nav { bottom: 7px; border-radius: 20px; }
+            .app-nav-button { min-height: 62px; }
+            .app-nav-button .nav-icon { font-size: 24px; }
+            .app-nav-button .nav-label { font-size: 13px; }
+            .diet-form-grid { grid-template-columns: 1fr; }
+            .diet-full { grid-column: auto; }
+            .diet-card { padding: 20px 15px; }
+        }
+
     </style>
 </head>
 
@@ -2663,6 +2947,8 @@ HTML = r"""
 </header>
 
 <main class="container">
+
+<div class="main-content-for-nav buy-mode" id="mainContentForNav">
 
 <form method="GET" class="search-form" id="searchForm">
 
@@ -3352,7 +3638,76 @@ HTML = r"""
 </div>
 
 
+</div>
+
+<!-- ============================================================
+     DIET SECTION
+============================================================ -->
+<div class="diet-panel" id="dietPanel">
+    <div class="diet-card">
+        <div style="text-align:center;font-size:42px;line-height:1;">🥗</div>
+        <h2 class="diet-heading">Healthy Diet Guide</h2>
+        <p class="diet-subheading">Enter a few details to generate a simple general healthy eating guide.</p>
+
+        <div class="diet-form-grid">
+            <div class="diet-field">
+                <label for="dietAge">Age</label>
+                <input id="dietAge" type="number" min="1" max="120" placeholder="Enter age">
+            </div>
+
+            <div class="diet-field">
+                <label for="dietWeight">Body weight (kg)</label>
+                <input id="dietWeight" type="number" min="1" max="500" step="0.1" placeholder="Enter weight">
+            </div>
+
+            <div class="diet-field diet-full">
+                <label for="dietActivity">Activity level</label>
+                <select id="dietActivity">
+                    <option value="low">🪑 Low — mostly sitting</option>
+                    <option value="moderate" selected>🚶 Moderate — regular walking</option>
+                    <option value="high">🏃 High — active/exercise</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="button" class="diet-generate" id="dietGenerate">Generate My Diet Chart</button>
+
+        <div class="diet-result" id="dietResult">
+            <h3>🥗 Your Daily Wellness Plan</h3>
+            <div class="diet-profile" id="dietProfile"></div>
+
+            <div class="diet-meal"><strong>🌅 Breakfast</strong><span id="dietBreakfast"></span></div>
+            <div class="diet-meal"><strong>🍎 Mid-Morning</strong><span>One fruit or a small handful of unsalted nuts.</span></div>
+            <div class="diet-meal"><strong>🍛 Lunch</strong><span id="dietLunch"></span></div>
+            <div class="diet-meal"><strong>☕ Evening</strong><span>Fruit, sprouts, curd or another light snack.</span></div>
+            <div class="diet-meal"><strong>🌙 Dinner</strong><span id="dietDinner"></span></div>
+            <div class="diet-meal"><strong>💧 Hydration</strong><span>Drink water regularly through the day and with meals according to your thirst and routine.</span></div>
+
+            <div class="diet-disclaimer">⚠️ This is a general healthy-diet guide, not a medical or therapeutic diet prescription. Individual nutritional needs can vary. If you have a medical condition, are pregnant, or need a therapeutic diet, consult a qualified healthcare professional or registered dietitian.</div>
+            <button type="button" class="diet-download" id="dietDownload">⬇️ Download Your Diet Chart</button>
+        </div>
+    </div>
+</div>
+
 </main>
+
+<!-- ============================================================
+     BOTTOM NAVIGATION
+============================================================ -->
+<nav class="app-bottom-nav" aria-label="MediCompare sections">
+    <button type="button" class="app-nav-button active" id="navBuyMedi" data-section="buy">
+        <span class="nav-icon">💊</span>
+        <span class="nav-label">BuyMedi</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navStepCounter" data-section="step">
+        <span class="nav-icon">👟</span>
+        <span class="nav-label">Step Counter</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navDiet" data-section="diet">
+        <span class="nav-icon">🍎</span>
+        <span class="nav-label">Diet</span>
+    </button>
+</nav>
 
 <script>
     const searchForm = document.getElementById("searchForm");
@@ -3946,6 +4301,147 @@ HTML = r"""
         healthTipIndex = (healthTipIndex + 1) % healthTips.length;
         showHealthTip(healthTipIndex);
     }, 4500);
+
+    // ============================================================
+    // BOTTOM NAVIGATION
+    // ============================================================
+    const navBuyMedi = document.getElementById("navBuyMedi");
+    const navStepCounter = document.getElementById("navStepCounter");
+    const navDiet = document.getElementById("navDiet");
+    const dietPanel = document.getElementById("dietPanel");
+    const mainContentForNav = document.getElementById("mainContentForNav");
+
+    function setActiveNav(button) {
+        [navBuyMedi, navStepCounter, navDiet].forEach(function (item) {
+            item.classList.toggle("active", item === button);
+        });
+    }
+
+    function scrollToTopOfContent() {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    navBuyMedi.addEventListener("click", function () {
+        document.body.classList.remove("step-mode", "diet-mode");
+        document.body.classList.add("buy-mode");
+        mainContentForNav.classList.remove("buy-mode");
+        void mainContentForNav.offsetWidth;
+        mainContentForNav.classList.add("buy-mode");
+        setActiveNav(navBuyMedi);
+        scrollToTopOfContent();
+    });
+
+    navStepCounter.addEventListener("click", function () {
+        document.body.classList.remove("buy-mode", "diet-mode");
+        document.body.classList.add("step-mode");
+        setActiveNav(navStepCounter);
+        scrollToTopOfContent();
+    });
+
+    navDiet.addEventListener("click", function () {
+        document.body.classList.remove("buy-mode", "step-mode");
+        document.body.classList.add("diet-mode");
+        setActiveNav(navDiet);
+        scrollToTopOfContent();
+    });
+
+    // ============================================================
+    // DIET GUIDE
+    // General wellness guidance only; no therapeutic prescription.
+    // ============================================================
+    const dietAge = document.getElementById("dietAge");
+    const dietWeight = document.getElementById("dietWeight");
+    const dietActivity = document.getElementById("dietActivity");
+    const dietGenerate = document.getElementById("dietGenerate");
+    const dietResult = document.getElementById("dietResult");
+    const dietProfile = document.getElementById("dietProfile");
+    const dietBreakfast = document.getElementById("dietBreakfast");
+    const dietLunch = document.getElementById("dietLunch");
+    const dietDinner = document.getElementById("dietDinner");
+    const dietDownload = document.getElementById("dietDownload");
+
+    let lastDietText = "";
+
+    const dietGuides = {
+        low: {
+            label: "Low activity",
+            breakfast: "Oats or idli/upma with fruit; choose a balanced portion.",
+            lunch: "Rice or roti with dal, plenty of vegetables and curd.",
+            dinner: "Roti with vegetables and dal, or a light balanced meal."
+        },
+        moderate: {
+            label: "Moderate activity",
+            breakfast: "Idli, dosa, oats or upma with fruit and a protein-rich side.",
+            lunch: "Rice or roti with dal/protein, vegetables and curd.",
+            dinner: "Roti or rice with vegetables and dal/protein; keep the meal balanced."
+        },
+        high: {
+            label: "High activity",
+            breakfast: "Oats/idli/upma with fruit plus a protein-rich food such as curd, eggs or sprouts.",
+            lunch: "Rice or roti with a good protein source, vegetables and curd.",
+            dinner: "A balanced meal with roti/rice, vegetables and a protein source."
+        }
+    };
+
+    dietGenerate.addEventListener("click", function () {
+        const age = Number(dietAge.value);
+        const weight = Number(dietWeight.value);
+        const activity = dietActivity.value;
+
+        if (!Number.isFinite(age) || age < 1 || age > 120) {
+            dietAge.focus();
+            dietAge.setCustomValidity("Please enter an age from 1 to 120.");
+            dietAge.reportValidity();
+            dietAge.setCustomValidity("");
+            return;
+        }
+
+        if (!Number.isFinite(weight) || weight <= 0 || weight > 500) {
+            dietWeight.focus();
+            dietWeight.setCustomValidity("Please enter a valid body weight in kg.");
+            dietWeight.reportValidity();
+            dietWeight.setCustomValidity("");
+            return;
+        }
+
+        const guide = dietGuides[activity] || dietGuides.moderate;
+        dietProfile.textContent = "Age: " + age + " • Weight: " + weight + " kg • Activity: " + guide.label;
+        dietBreakfast.textContent = guide.breakfast;
+        dietLunch.textContent = guide.lunch;
+        dietDinner.textContent = guide.dinner;
+        dietResult.classList.add("show");
+
+        lastDietText =
+            "MediCompare — General Healthy Diet Guide\n\n" +
+            "Age: " + age + "\n" +
+            "Body weight: " + weight + " kg\n" +
+            "Activity: " + guide.label + "\n\n" +
+            "Breakfast: " + guide.breakfast + "\n\n" +
+            "Mid-Morning: One fruit or a small handful of unsalted nuts.\n\n" +
+            "Lunch: " + guide.lunch + "\n\n" +
+            "Evening: Fruit, sprouts, curd or another light snack.\n\n" +
+            "Dinner: " + guide.dinner + "\n\n" +
+            "Hydration: Drink water regularly through the day and with meals according to your thirst and routine.\n\n" +
+            "Disclaimer: General healthy-diet guide only; not a medical or therapeutic diet prescription.";
+    });
+
+    dietDownload.addEventListener("click", function () {
+        if (!lastDietText) {
+            dietGenerate.click();
+            if (!lastDietText) return;
+        }
+
+        const blob = new Blob([lastDietText], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "MediCompare_Diet_Chart.txt";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    });
+
 </script>
 
 </body>
