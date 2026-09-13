@@ -3202,7 +3202,64 @@ HTML = r"""
             .diet-card { padding: 20px 15px; }
         }
 
+
+        /* ============================================================
+           CAMERA OCR
+        ============================================================ */
+        .ocr-progress {
+            display: none;
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #eef8f4;
+            color: #146b58;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+        .ocr-progress.show { display: block; }
+        .ocr-progress-bar {
+            height: 7px;
+            margin-top: 8px;
+            border-radius: 999px;
+            background: #d7ebe4;
+            overflow: hidden;
+        }
+        .ocr-progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: #0b8668;
+            transition: width .2s ease;
+        }
+        .ocr-text {
+            display: none;
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #f6f7f7;
+            color: #4d5c58;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 150px;
+            overflow: auto;
+        }
+        .ocr-text.show { display: block; }
+        .ocr-result {
+            display: none;
+            margin-top: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #e9f7f1;
+            color: #0f6653;
+            font-weight: 700;
+            line-height: 1.45;
+        }
+        .ocr-result.show { display: block; }
+
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 
 <body>
@@ -4042,8 +4099,16 @@ HTML = r"""
         </div>
 
         <div class="camera-result" id="cameraResult">
-            Photo captured. Medicine recognition/OCR can be connected to this photo in the next step.
+            Photo captured. Tap <strong>Use Photo</strong> to read the medicine text.
         </div>
+
+        <div class="ocr-progress" id="ocrProgress" aria-live="polite">
+            <div id="ocrProgressText">Reading medicine text…</div>
+            <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocrProgressFill"></div></div>
+        </div>
+
+        <div class="ocr-result" id="ocrResult"></div>
+        <div class="ocr-text" id="ocrText"></div>
 
         <canvas id="cameraCanvas" style="display:none;"></canvas>
     </div>
@@ -4136,9 +4201,8 @@ HTML = r"""
 
     // ============================================================
     // CAMERA SCANNER
-    // V10.1 camera foundation: permission -> live preview -> capture
-    // -> retake/use photo. OCR/medicine recognition is intentionally
-    // not performed yet.
+    // Camera + OCR: permission -> live preview -> capture -> OCR
+    // -> detected medicine query. User confirms the OCR text before search.
     // ============================================================
     const cameraOpenButton = document.getElementById("cameraOpenButton");
     const cameraModal = document.getElementById("cameraModal");
@@ -4186,6 +4250,9 @@ HTML = r"""
         cameraRetakeButton.disabled = true;
         cameraUsePhotoButton.disabled = true;
         cameraResult.classList.remove("show");
+        if (typeof clearOcrOutput === "function") {
+            clearOcrOutput();
+        }
         cameraHint.textContent =
             "Place the medicine strip or box inside the guide and keep it steady.";
     }
@@ -4296,17 +4363,134 @@ HTML = r"""
     cameraCaptureButton.addEventListener("click", capturePhoto);
     cameraRetakeButton.addEventListener("click", openCamera);
 
-    cameraUsePhotoButton.addEventListener("click", function () {
+    const ocrProgress = document.getElementById("ocrProgress");
+    const ocrProgressText = document.getElementById("ocrProgressText");
+    const ocrProgressFill = document.getElementById("ocrProgressFill");
+    const ocrResult = document.getElementById("ocrResult");
+    const ocrText = document.getElementById("ocrText");
+
+    function setOcrProgress(percent, message) {
+        ocrProgress.classList.add("show");
+        ocrProgressFill.style.width = Math.max(0, Math.min(100, percent)) + "%";
+        ocrProgressText.textContent = message;
+    }
+
+    function clearOcrOutput() {
+        ocrProgress.classList.remove("show");
+        ocrProgressFill.style.width = "0%";
+        ocrProgressText.textContent = "Reading medicine text…";
+        ocrResult.textContent = "";
+        ocrResult.classList.remove("show");
+        ocrText.textContent = "";
+        ocrText.classList.remove("show");
+    }
+
+    function cleanOcrLine(line) {
+        return line
+            .replace(/[|{}\[\]<>~`^*_#=]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function pickMedicineQuery(text) {
+        const lines = text
+            .split(/\r?\n/)
+            .map(cleanOcrLine)
+            .filter(function (line) { return line.length >= 3; });
+
+        if (!lines.length) return "";
+
+        const strengthPattern = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|ug|g|ml|iu)\b/i;
+        const medicineFormPattern = /\b(tablet|tablets|tab|capsule|capsules|syrup|drops|injection|cream|gel|ointment|suspension)\b/i;
+        const noisePattern = /^(mrp|batch|lot|mfg|exp|expiry|manufactured|marketed|composition|warning|store|schedule|keep|dosage|for|use|each|price)\b/i;
+
+        const candidates = lines.map(function (line, index) {
+            let score = 0;
+            if (strengthPattern.test(line)) score += 6;
+            if (medicineFormPattern.test(line)) score += 2;
+            if (/[a-z]{3,}/i.test(line)) score += 1;
+            if (line.length <= 55) score += 1;
+            if (noisePattern.test(line)) score -= 7;
+            return { line: line, score: score, index: index };
+        });
+
+        candidates.sort(function (a, b) {
+            return b.score - a.score || a.index - b.index;
+        });
+
+        const best = candidates[0];
+        if (!best || best.score < 2) return lines[0].slice(0, 100);
+        return best.line.slice(0, 100);
+    }
+
+    async function runMedicineOCR() {
         if (!capturedPhotoDataUrl) return;
 
-        // Keep the captured image ready for the upcoming OCR/recognition stage.
-        // No fake medicine name is inserted into the search box.
-        cameraHint.textContent =
-            "Photo selected. Medicine recognition will be connected in the next camera step.";
-        cameraResult.textContent =
-            "Photo selected successfully. OCR/medicine recognition is not enabled yet.";
+        clearOcrOutput();
+        cameraUsePhotoButton.disabled = true;
+        cameraRetakeButton.disabled = true;
+        cameraHint.textContent = "Reading the medicine label. Keep this window open…";
+        cameraResult.textContent = "OCR is reading the captured photo…";
         cameraResult.classList.add("show");
-    });
+
+        if (!window.Tesseract) {
+            setOcrProgress(0, "OCR engine could not be loaded. Check your internet connection and try again.");
+            cameraUsePhotoButton.disabled = false;
+            cameraRetakeButton.disabled = false;
+            return;
+        }
+
+        try {
+            const result = await Tesseract.recognize(
+                capturedPhotoDataUrl,
+                "eng",
+                {
+                    logger: function (info) {
+                        if (typeof info.progress === "number") {
+                            const pct = Math.round(info.progress * 100);
+                            const label = info.status === "recognizing text" ? "Recognizing medicine text…" : "Preparing OCR…";
+                            setOcrProgress(pct, label + " " + pct + "%");
+                        }
+                    }
+                }
+            );
+
+            const text = (result && result.data && result.data.text || "").trim();
+            const medicineQuery = pickMedicineQuery(text);
+
+            ocrText.textContent = text || "No readable text was found.";
+            ocrText.classList.add("show");
+
+            if (!medicineQuery) {
+                ocrResult.textContent = "Could not identify a medicine name from this photo. Retake it with the medicine name and strength clearly visible.";
+                ocrResult.classList.add("show");
+                cameraHint.textContent = "Try a clearer, well-lit photo of the medicine strip or box.";
+                return;
+            }
+
+            medicineInput.value = medicineQuery;
+            updateClearButton();
+            ocrResult.textContent = "Detected: " + medicineQuery + " — please confirm the name and strength, then tap Search.";
+            ocrResult.classList.add("show");
+            cameraHint.textContent = "Medicine text detected. Confirm it in the search box before searching prices.";
+            cameraResult.textContent = "OCR completed successfully.";
+            setOcrProgress(100, "OCR complete");
+
+            setTimeout(function () {
+                closeCamera();
+                medicineInput.focus();
+            }, 700);
+        } catch (error) {
+            console.error("OCR error:", error);
+            setOcrProgress(0, "OCR failed. Please retake a clearer medicine photo and try again.");
+            cameraHint.textContent = "Use a sharp, well-lit photo with the medicine name and strength facing the camera.";
+        } finally {
+            cameraUsePhotoButton.disabled = false;
+            cameraRetakeButton.disabled = false;
+        }
+    }
+
+    cameraUsePhotoButton.addEventListener("click", runMedicineOCR);
 
     cameraCloseButton.addEventListener("click", closeCamera);
     cameraCloseButton2.addEventListener("click", closeCamera);
