@@ -3396,7 +3396,8 @@ HTML = r"""
     // ============================================================
     // STEP COUNTER
     // Browser motion sensors provide an approximate step count.
-    // The count is stored locally for the current calendar day.
+    // Fast-response detector: updates the UI immediately when a step
+    // impulse is detected instead of waiting for a long batch/window.
     // ============================================================
 
     const STEP_GOAL = 10000;
@@ -3416,8 +3417,19 @@ HTML = r"""
 
     let stepCounting = false;
     let lastStepTime = 0;
-    let previousMagnitude = null;
-    let peakDetected = false;
+    let previousMotionMagnitude = null;
+    let smoothedMotion = 0;
+    let gravityX = 0;
+    let gravityY = 0;
+    let gravityZ = 0;
+    let detectorReady = false;
+
+    // Tuned for a faster visual response while keeping a short debounce
+    // to reduce obvious double-counting from one footstep.
+    const STEP_THRESHOLD = 1.05;
+    const STEP_COOLDOWN_MS = 280;
+    const GRAVITY_SMOOTHING = 0.88;
+    const MOTION_SMOOTHING = 0.35;
 
     function updateStepDisplay() {
         stepCountElement.textContent = stepCount.toLocaleString();
@@ -3446,8 +3458,8 @@ HTML = r"""
         }
 
         const acceleration =
-            event.accelerationIncludingGravity ||
-            event.acceleration;
+            event.acceleration ||
+            event.accelerationIncludingGravity;
 
         if (!acceleration) {
             return;
@@ -3457,40 +3469,51 @@ HTML = r"""
         const y = Number(acceleration.y) || 0;
         const z = Number(acceleration.z) || 0;
 
+        // Remove the slowly changing gravity component. This makes the
+        // detector react to the walking impulse much sooner.
+        gravityX = GRAVITY_SMOOTHING * gravityX + (1 - GRAVITY_SMOOTHING) * x;
+        gravityY = GRAVITY_SMOOTHING * gravityY + (1 - GRAVITY_SMOOTHING) * y;
+        gravityZ = GRAVITY_SMOOTHING * gravityZ + (1 - GRAVITY_SMOOTHING) * z;
+
+        const linearX = x - gravityX;
+        const linearY = y - gravityY;
+        const linearZ = z - gravityZ;
+
         const magnitude = Math.sqrt(
-            x * x + y * y + z * z
+            linearX * linearX +
+            linearY * linearY +
+            linearZ * linearZ
         );
 
-        if (previousMagnitude === null) {
-            previousMagnitude = magnitude;
+        if (!detectorReady) {
+            smoothedMotion = magnitude;
+            previousMotionMagnitude = magnitude;
+            detectorReady = true;
             return;
         }
 
-        const delta = magnitude - previousMagnitude;
-        previousMagnitude = magnitude;
+        smoothedMotion =
+            MOTION_SMOOTHING * magnitude +
+            (1 - MOTION_SMOOTHING) * smoothedMotion;
 
-        // A simple peak detector with a short debounce.
-        // This is intentionally approximate rather than fitness-grade.
-        if (delta > 1.8) {
-            peakDetected = true;
-        }
+        const previous = previousMotionMagnitude;
+        previousMotionMagnitude = smoothedMotion;
+
+        const risingCrossing =
+            previous < STEP_THRESHOLD &&
+            smoothedMotion >= STEP_THRESHOLD;
 
         if (
-            peakDetected &&
-            delta < -1.0 &&
-            Date.now() - lastStepTime > 300
+            risingCrossing &&
+            performance.now() - lastStepTime >= STEP_COOLDOWN_MS
         ) {
             addStep();
-            lastStepTime = Date.now();
-            peakDetected = false;
+            lastStepTime = performance.now();
         }
     }
 
     async function startStepCounter() {
         try {
-            // Motion sensors are restricted to secure contexts by modern browsers.
-            // localhost is normally allowed, while a phone connecting to a laptop
-            // through an HTTP LAN IP (for example 10.x.x.x:5000) is not.
             if (!window.isSecureContext) {
                 stepStatus.textContent =
                     "Motion counting needs HTTPS. Open MediCompare using its HTTPS address (or localhost).";
@@ -3515,9 +3538,13 @@ HTML = r"""
                 }
             }
 
-            previousMagnitude = null;
-            peakDetected = false;
-            lastStepTime = 0;
+            previousMotionMagnitude = null;
+            smoothedMotion = 0;
+            gravityX = 0;
+            gravityY = 0;
+            gravityZ = 0;
+            detectorReady = false;
+            lastStepTime = performance.now() - STEP_COOLDOWN_MS;
             stepCounting = true;
 
             window.addEventListener(
@@ -3528,7 +3555,7 @@ HTML = r"""
 
             stepStartButton.textContent = "Pause";
             stepStatus.textContent =
-                "Counting steps… keep your phone with you.";
+                "Counting steps… live updates enabled. Keep your phone with you.";
         } catch (error) {
             console.error("Step counter permission/error:", error);
             stepStatus.textContent =
@@ -3555,8 +3582,12 @@ HTML = r"""
 
     stepResetButton.addEventListener("click", function () {
         stepCount = 0;
-        previousMagnitude = null;
-        peakDetected = false;
+        previousMotionMagnitude = null;
+        smoothedMotion = 0;
+        gravityX = 0;
+        gravityY = 0;
+        gravityZ = 0;
+        detectorReady = false;
         saveSteps();
         updateStepDisplay();
 
