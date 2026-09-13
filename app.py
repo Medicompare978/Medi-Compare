@@ -3460,18 +3460,18 @@ HTML = r"""
     const START_PEAK_MARGIN = 0.16;
 
     // More sensitive after a genuine walking rhythm is confirmed.
-    const WALK_MIN_PEAK = 0.10;
-    const WALK_PEAK_MARGIN = 0.075;
+    const WALK_MIN_PEAK = 0.18;
+    const WALK_PEAK_MARGIN = 0.12;
 
     const STEP_MIN_INTERVAL_MS = 300;
     const STEP_MAX_INTERVAL_MS = 1500;
 
     const WALK_CONFIRM_CANDIDATES = 4;
-    const WALK_INTERVAL_TOLERANCE = 0.38;
-    const WALK_AMPLITUDE_TOLERANCE = 0.72;
+    const WALK_INTERVAL_TOLERANCE = 0.28;
+    const WALK_AMPLITUDE_TOLERANCE = 0.45;
 
-    const WALK_START_TIMEOUT_MS = 2200;
-    const WALK_BREAK_TIMEOUT_MS = 1800;
+    const WALK_START_TIMEOUT_MS = 1800;
+    const WALK_BREAK_TIMEOUT_MS = 1250;
 
     const DUPLICATE_INTERVAL_FACTOR = 0.42;
 
@@ -3630,8 +3630,37 @@ HTML = r"""
                     return;
                 }
 
-                // Recover one missed step if the gap is approximately two
-                // normal walking cycles.
+                // Once walking is confirmed, keep a strict cadence gate.
+                // This prevents an arbitrary phone shake from immediately
+                // becoming a step just because it crosses the low active
+                // threshold.
+                if (!cadence ||
+                    interval < cadence * 0.72 ||
+                    interval > cadence * 1.32) {
+                    return;
+                }
+
+                // Require the new peak to remain reasonably strong relative
+                // to recent walking peaks. This is the important V10 seated
+                // false-positive fix: timing alone is no longer sufficient.
+                const recentAmplitudes =
+                    candidateAmplitudes.slice(Math.max(0, candidateAmplitudes.length - 4));
+
+                if (recentAmplitudes.length >= 3) {
+                    const amplitudeMedian = [...recentAmplitudes]
+                        .sort((a, b) => a - b)[Math.floor(recentAmplitudes.length / 2)];
+
+                    if (!Number.isFinite(amplitudeMedian) ||
+                        amplitude < Math.max(
+                            WALK_MIN_PEAK,
+                            amplitudeMedian * 0.52
+                        )) {
+                        return;
+                    }
+                }
+
+                // Recover one missed step only when the gap is close to two
+                // stable walking periods.
                 if (cadence &&
                     interval >= cadence * 1.62 &&
                     interval <= cadence * 2.42) {
@@ -3662,7 +3691,8 @@ HTML = r"""
         if (!confirmedWalking &&
             candidateTimes.length >= WALK_CONFIRM_CANDIDATES &&
             cadenceIsRegular(candidateTimes) &&
-            amplitudesAreWalkingLike(candidateAmplitudes)) {
+            amplitudesAreWalkingLike(candidateAmplitudes) &&
+            candidateAmplitudes.every(value => value >= START_MIN_PEAK)) {
 
             confirmedWalking = true;
 
