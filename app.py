@@ -3395,9 +3395,10 @@ HTML = r"""
 
     // ============================================================
     // STEP COUNTER
-    // Browser motion sensors provide an approximate step count.
-    // Fast-response detector: updates the UI immediately when a step
-    // impulse is detected instead of waiting for a long batch/window.
+    // Walking-focused detector. A single phone movement is NOT counted
+    // as a step. The detector looks for a repeated walking cadence before
+    // confirming steps. The UI refreshes in a small 5-second batch so the
+    // number feels stable instead of jumping on every tiny movement.
     // ============================================================
 
     const STEP_GOAL = 10000;
@@ -3415,8 +3416,10 @@ HTML = r"""
         stepCount = 0;
     }
 
+    let displayedStepCount = stepCount;
     let stepCounting = false;
-    let lastStepTime = 0;
+    let uiUpdateTimer = null;
+
     let previousMotionMagnitude = null;
     let smoothedMotion = 0;
     let gravityX = 0;
@@ -3424,19 +3427,32 @@ HTML = r"""
     let gravityZ = 0;
     let detectorReady = false;
 
-    // Tuned for a faster visual response while keeping a short debounce
-    // to reduce obvious double-counting from one footstep.
-    const STEP_THRESHOLD = 1.05;
-    const STEP_COOLDOWN_MS = 280;
-    const GRAVITY_SMOOTHING = 0.88;
-    const MOTION_SMOOTHING = 0.35;
+    // Walking-focused tuning.
+    // A candidate must be part of a repeated, human-like cadence.
+    const STEP_THRESHOLD = 1.45;
+    const STEP_MIN_INTERVAL_MS = 350;
+    const STEP_MAX_INTERVAL_MS = 1200;
+    const WALK_CONFIRM_STEPS = 3;
+    const WALK_INTERVAL_TOLERANCE = 0.42;
+    const STEP_SMOOTHING = 0.42;
+    const GRAVITY_SMOOTHING = 0.90;
 
-    function updateStepDisplay() {
-        stepCountElement.textContent = stepCount.toLocaleString();
+    let candidateTimes = [];
+    let confirmedWalking = false;
+    let lastCandidateTime = 0;
+    let lastConfirmedTime = 0;
+
+    function updateStepDisplay(force = false) {
+        if (!force && displayedStepCount === stepCount) {
+            return;
+        }
+
+        displayedStepCount = stepCount;
+        stepCountElement.textContent = displayedStepCount.toLocaleString();
 
         const progress = Math.min(
             100,
-            (stepCount / STEP_GOAL) * 100
+            (displayedStepCount / STEP_GOAL) * 100
         );
 
         stepProgressBar.style.width = progress + "%";
@@ -3446,10 +3462,111 @@ HTML = r"""
         localStorage.setItem(stepStorageKey, String(stepCount));
     }
 
-    function addStep() {
-        stepCount += 1;
+    function addConfirmedSteps(numberOfSteps) {
+        if (numberOfSteps <= 0) return;
+        stepCount += numberOfSteps;
         saveSteps();
-        updateStepDisplay();
+    }
+
+    // Refresh the visible number every 5 seconds while counting.
+    function startUiUpdateTimer() {
+        stopUiUpdateTimer();
+        uiUpdateTimer = setInterval(function () {
+            updateStepDisplay(true);
+        }, 5000);
+    }
+
+    function stopUiUpdateTimer() {
+        if (uiUpdateTimer) {
+            clearInterval(uiUpdateTimer);
+            uiUpdateTimer = null;
+        }
+    }
+
+    function resetWalkingDetector() {
+        candidateTimes = [];
+        confirmedWalking = false;
+        lastCandidateTime = 0;
+        lastConfirmedTime = 0;
+    }
+
+    function confirmWalkingCadence(now) {
+        if (candidateTimes.length < WALK_CONFIRM_STEPS) {
+            return false;
+        }
+
+        const intervals = [];
+        for (let i = 1; i < candidateTimes.length; i++) {
+            intervals.push(candidateTimes[i] - candidateTimes[i - 1]);
+        }
+
+        const recent = intervals.slice(-2);
+        if (recent.length < 2) {
+            return false;
+        }
+
+        const avg = (recent[0] + recent[1]) / 2;
+        if (
+            avg < STEP_MIN_INTERVAL_MS ||
+            avg > STEP_MAX_INTERVAL_MS
+        ) {
+            return false;
+        }
+
+        const variation = Math.abs(recent[0] - recent[1]) / avg;
+        if (variation > WALK_INTERVAL_TOLERANCE) {
+            return false;
+        }
+
+        confirmedWalking = true;
+        lastConfirmedTime = now;
+        return true;
+    }
+
+    function registerCandidate(now) {
+        if (lastCandidateTime === 0) {
+            candidateTimes = [now];
+            lastCandidateTime = now;
+            return;
+        }
+
+        const interval = now - lastCandidateTime;
+
+        // Ignore tiny repeated peaks from the same phone movement.
+        if (interval < STEP_MIN_INTERVAL_MS) {
+            return;
+        }
+
+        // A gap this large means the walking sequence has ended.
+        if (interval > STEP_MAX_INTERVAL_MS) {
+            candidateTimes = [now];
+            lastCandidateTime = now;
+            confirmedWalking = false;
+            return;
+        }
+
+        candidateTimes.push(now);
+        if (candidateTimes.length > 5) {
+            candidateTimes.shift();
+        }
+        lastCandidateTime = now;
+
+        const wasWalking = confirmedWalking;
+        const cadenceConfirmed = confirmWalkingCadence(now);
+
+        if (!wasWalking && cadenceConfirmed) {
+            // The three candidates form the first confirmed walking group.
+            // Count all three together rather than counting isolated motion.
+            addConfirmedSteps(candidateTimes.length);
+            candidateTimes = [now];
+            lastCandidateTime = now;
+            return;
+        }
+
+        if (wasWalking && confirmedWalking) {
+            addConfirmedSteps(1);
+            lastConfirmedTime = now;
+        }
     }
 
     function handleMotion(event) {
@@ -3469,8 +3586,8 @@ HTML = r"""
         const y = Number(acceleration.y) || 0;
         const z = Number(acceleration.z) || 0;
 
-        // Remove the slowly changing gravity component. This makes the
-        // detector react to the walking impulse much sooner.
+        // Remove gravity so normal phone orientation does not itself look
+        // like a step.
         gravityX = GRAVITY_SMOOTHING * gravityX + (1 - GRAVITY_SMOOTHING) * x;
         gravityY = GRAVITY_SMOOTHING * gravityY + (1 - GRAVITY_SMOOTHING) * y;
         gravityZ = GRAVITY_SMOOTHING * gravityZ + (1 - GRAVITY_SMOOTHING) * z;
@@ -3493,22 +3610,31 @@ HTML = r"""
         }
 
         smoothedMotion =
-            MOTION_SMOOTHING * magnitude +
-            (1 - MOTION_SMOOTHING) * smoothedMotion;
+            STEP_SMOOTHING * magnitude +
+            (1 - STEP_SMOOTHING) * smoothedMotion;
 
         const previous = previousMotionMagnitude;
         previousMotionMagnitude = smoothedMotion;
 
-        const risingCrossing =
+        const now = performance.now();
+
+        // Require a clear rising impulse, not just continuous phone motion.
+        const risingPeak =
             previous < STEP_THRESHOLD &&
             smoothedMotion >= STEP_THRESHOLD;
 
+        if (risingPeak) {
+            registerCandidate(now);
+        }
+
+        // Walking must remain continuous. If cadence stops, return to the
+        // waiting state instead of counting later isolated phone movement.
         if (
-            risingCrossing &&
-            performance.now() - lastStepTime >= STEP_COOLDOWN_MS
+            confirmedWalking &&
+            lastConfirmedTime > 0 &&
+            now - lastConfirmedTime > STEP_MAX_INTERVAL_MS * 1.25
         ) {
-            addStep();
-            lastStepTime = performance.now();
+            resetWalkingDetector();
         }
     }
 
@@ -3526,7 +3652,6 @@ HTML = r"""
                 return;
             }
 
-            // iOS 13+ requires explicit permission for motion sensors.
             if (typeof DeviceMotionEvent.requestPermission === "function") {
                 const permission =
                     await DeviceMotionEvent.requestPermission();
@@ -3544,7 +3669,7 @@ HTML = r"""
             gravityY = 0;
             gravityZ = 0;
             detectorReady = false;
-            lastStepTime = performance.now() - STEP_COOLDOWN_MS;
+            resetWalkingDetector();
             stepCounting = true;
 
             window.addEventListener(
@@ -3553,9 +3678,11 @@ HTML = r"""
                 { passive: true }
             );
 
+            startUiUpdateTimer();
+
             stepStartButton.textContent = "Pause";
             stepStatus.textContent =
-                "Counting steps… live updates enabled. Keep your phone with you.";
+                "Walking detection active. Steps update about every 5 seconds.";
         } catch (error) {
             console.error("Step counter permission/error:", error);
             stepStatus.textContent =
@@ -3566,6 +3693,8 @@ HTML = r"""
     function pauseStepCounter() {
         stepCounting = false;
         window.removeEventListener("devicemotion", handleMotion);
+        stopUiUpdateTimer();
+        updateStepDisplay(true);
 
         stepStartButton.textContent = "Start Counting";
         stepStatus.textContent =
@@ -3582,25 +3711,27 @@ HTML = r"""
 
     stepResetButton.addEventListener("click", function () {
         stepCount = 0;
+        displayedStepCount = 0;
         previousMotionMagnitude = null;
         smoothedMotion = 0;
         gravityX = 0;
         gravityY = 0;
         gravityZ = 0;
         detectorReady = false;
+        resetWalkingDetector();
         saveSteps();
-        updateStepDisplay();
+        updateStepDisplay(true);
 
         if (stepCounting) {
             stepStatus.textContent =
-                "Reset complete. Counting again…";
+                "Reset complete. Walking detection is active…";
         } else {
             stepStatus.textContent =
                 "Counter reset. Start counting when you're ready.";
         }
     });
 
-    updateStepDisplay();
+    updateStepDisplay(true);
 
     const healthTips = [
         ["💧", "Stay hydrated — drink enough water throughout the day."],
