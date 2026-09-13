@@ -2635,6 +2635,281 @@ HTML = r"""
         }
 
 
+
+
+        /* ============================================================
+           DIET PDF EXPORT
+        ============================================================ */
+        .diet-print-only {
+            display: none;
+        }
+
+        @media print {
+            body > * {
+                display: none !important;
+            }
+
+            #dietPdfPrintArea {
+                display: block !important;
+                position: static !important;
+                width: 100% !important;
+                background: white !important;
+                color: #1f2f2a !important;
+                padding: 28px !important;
+                font-family: Arial, sans-serif !important;
+            }
+
+            #dietPdfPrintArea h1 {
+                margin: 0 0 6px !important;
+                color: #087f5b !important;
+                font-size: 26px !important;
+            }
+
+            #dietPdfPrintArea h2 {
+                margin: 22px 0 8px !important;
+                color: #087f5b !important;
+                font-size: 18px !important;
+            }
+
+            #dietPdfPrintArea p {
+                margin: 5px 0 !important;
+                line-height: 1.5 !important;
+            }
+
+            #dietPdfPrintArea .diet-pdf-meta {
+                padding: 12px !important;
+                border: 1px solid #dce9e3 !important;
+                border-radius: 10px !important;
+                margin: 14px 0 !important;
+            }
+
+            #dietPdfPrintArea .diet-pdf-meal {
+                border: 1px solid #dce9e3 !important;
+                border-radius: 10px !important;
+                padding: 11px !important;
+                margin: 8px 0 !important;
+                page-break-inside: avoid !important;
+            }
+
+            #dietPdfPrintArea .diet-pdf-note {
+                margin-top: 20px !important;
+                padding-top: 10px !important;
+                border-top: 1px solid #dce9e3 !important;
+                font-size: 11px !important;
+                color: #60736c !important;
+            }
+        }
+
+        /* ============================================================
+           CAMERA SCANNER
+        ============================================================ */
+        .camera-search-button {
+            position: absolute;
+            right: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 11px;
+            background: #e8f8f2;
+            color: #087f5b;
+            font-size: 19px;
+            cursor: pointer;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .18s ease, background .2s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .camera-search-button:hover {
+            background: #d9f3e9;
+            transform: translateY(-50%) scale(1.04);
+        }
+
+        .camera-search-button:active {
+            transform: translateY(-50%) scale(.96);
+        }
+
+        .camera-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            background: rgba(10, 30, 24, .62);
+            backdrop-filter: blur(7px);
+            -webkit-backdrop-filter: blur(7px);
+        }
+
+        .camera-modal.show {
+            display: flex;
+            animation: cameraFadeIn .2s ease both;
+        }
+
+        @keyframes cameraFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .camera-card {
+            width: min(520px, 100%);
+            max-height: calc(100dvh - 36px);
+            overflow: auto;
+            background: white;
+            border-radius: 24px;
+            padding: 18px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.25);
+            animation: cameraCardIn .25s ease both;
+        }
+
+        @keyframes cameraCardIn {
+            from { transform: translateY(12px) scale(.98); }
+            to { transform: translateY(0) scale(1); }
+        }
+
+        .camera-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .camera-card-title {
+            color: #087f5b;
+            font-size: 19px;
+            font-weight: 900;
+        }
+
+        .camera-close {
+            width: 38px;
+            height: 38px;
+            border: 0;
+            border-radius: 12px;
+            background: #f0f4f2;
+            color: #47615a;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .camera-stage {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            border-radius: 18px;
+            background: #10221d;
+        }
+
+        .camera-video,
+        .camera-photo {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-photo {
+            display: none;
+        }
+
+        .camera-guide {
+            position: absolute;
+            left: 9%;
+            right: 9%;
+            top: 17%;
+            bottom: 17%;
+            border: 2px dashed rgba(255,255,255,.85);
+            border-radius: 16px;
+            pointer-events: none;
+        }
+
+        .camera-hint {
+            margin: 10px 2px 0;
+            color: #62736e;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .camera-error {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: #fff4f4;
+            color: #a33a3a;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .camera-error.show {
+            display: block;
+        }
+
+        .camera-actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 9px;
+            margin-top: 14px;
+        }
+
+        .camera-action {
+            min-height: 46px;
+            border: 0;
+            border-radius: 13px;
+            padding: 10px 14px;
+            font: inherit;
+            font-weight: 800;
+            cursor: pointer;
+            background: #e8f8f2;
+            color: #087f5b;
+        }
+
+        .camera-action.primary {
+            background: #087f5b;
+            color: white;
+        }
+
+        .camera-action:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        .camera-result {
+            display: none;
+            margin-top: 12px;
+            padding: 11px 13px;
+            border-radius: 13px;
+            background: #f3faf7;
+            color: #45615a;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .camera-result.show {
+            display: block;
+        }
+
+        @media (max-width: 560px) {
+            .camera-modal {
+                padding: 10px;
+            }
+
+            .camera-card {
+                border-radius: 20px;
+                padding: 14px;
+            }
+
+            .camera-actions {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
         /* ============================================================
            BOTTOM APP NAVIGATION + SECTION MODES
            Keeps the existing MediCompare visual design intact.
@@ -2970,6 +3245,14 @@ HTML = r"""
             id="clearSearch"
             aria-label="Clear search"
         >×</button>
+
+        <button
+            type="button"
+            class="camera-search-button"
+            id="cameraOpenButton"
+            aria-label="Open camera to scan medicine"
+            title="Scan medicine with camera"
+        >📷</button>
 
     </div>
 
@@ -3691,6 +3974,72 @@ HTML = r"""
 
 </main>
 
+
+
+<!-- ============================================================
+     DIET PDF PRINT AREA
+============================================================ -->
+<div id="dietPdfPrintArea" class="diet-print-only"></div>
+
+<!-- ============================================================
+     CAMERA SCANNER
+============================================================ -->
+<div class="camera-modal" id="cameraModal" aria-hidden="true">
+    <div class="camera-card" role="dialog" aria-modal="true" aria-labelledby="cameraTitle">
+
+        <div class="camera-card-header">
+            <div class="camera-card-title" id="cameraTitle">📷 Scan Medicine</div>
+            <button type="button" class="camera-close" id="cameraCloseButton" aria-label="Close camera">×</button>
+        </div>
+
+        <div class="camera-stage">
+            <video
+                class="camera-video"
+                id="cameraVideo"
+                autoplay
+                playsinline
+                muted
+            ></video>
+
+            <img
+                class="camera-photo"
+                id="cameraPhoto"
+                alt="Captured medicine photo"
+            >
+
+            <div class="camera-guide" aria-hidden="true"></div>
+        </div>
+
+        <div class="camera-hint" id="cameraHint">
+            Place the medicine strip or box inside the guide and keep it steady.
+        </div>
+
+        <div class="camera-error" id="cameraError" role="alert"></div>
+
+        <div class="camera-actions">
+            <button type="button" class="camera-action primary" id="cameraCaptureButton">
+                📸 Capture
+            </button>
+            <button type="button" class="camera-action" id="cameraRetakeButton" disabled>
+                🔄 Retake
+            </button>
+            <button type="button" class="camera-action primary" id="cameraUsePhotoButton" disabled>
+                ✅ Use Photo
+            </button>
+            <button type="button" class="camera-action" id="cameraCloseButton2">
+                Close
+            </button>
+        </div>
+
+        <div class="camera-result" id="cameraResult">
+            Photo captured. Medicine recognition/OCR can be connected to this photo in the next step.
+        </div>
+
+        <canvas id="cameraCanvas" style="display:none;"></canvas>
+    </div>
+</div>
+
+
 <!-- ============================================================
      BOTTOM NAVIGATION
 ============================================================ -->
@@ -3746,6 +4095,264 @@ HTML = r"""
     });
 
     updateClearButton();
+
+
+
+
+    // ============================================================
+    // DIET PDF EXPORT
+    // Uses the browser's native print-to-PDF flow so the user gets
+    // a real PDF file instead of a plain .txt note.
+    // ============================================================
+    function escapeDietPdfText(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    function buildDietPdfContent() {
+        const printArea = document.getElementById("dietPdfPrintArea");
+        if (!printArea) return false;
+
+        // Pull the currently generated diet result from the visible Diet section.
+        // This keeps the PDF aligned with exactly what the user generated.
+        const dietSection =
+            document.getElementById("dietSection") ||
+            document.querySelector(".diet-section") ||
+            document.querySelector("[data-section='diet']");
+
+        let source = dietSection;
+        if (!source) {
+            // Fallback: find the result card containing the generated diet.
+            source =
+                document.querySelector(".diet-result.show") ||
+                document.querySelector(".diet-result");
+        }
+
+        if (!source) return false;
+
+        // Clone only the generated diet content; strip interactive controls.
+        const clone = source.cloneNode(true);
+        clone.querySelectorAll("button, input, select, textarea, .diet-download-button")
+            .forEach(function (el) { el.remove(); });
+
+        printArea.innerHTML = `
+            <h1>MediCompare — Healthy Diet Guide</h1>
+            <p>General healthy eating guide generated from your entered details.</p>
+            ${clone.innerHTML}
+            <div class="diet-pdf-note">
+                <strong>Important:</strong> This is a general wellness guide, not a
+                medical prescription or a substitute for advice from a qualified
+                healthcare professional.
+            </div>
+        `;
+
+        return true;
+    }
+
+    function downloadDietChartAsPDF() {
+        if (!buildDietPdfContent()) {
+            alert("Please generate your diet chart first.");
+            return;
+        }
+
+        // Let the browser create a real PDF through its native print dialog.
+        window.setTimeout(function () {
+            window.print();
+        }, 80);
+    }
+
+
+    // ============================================================
+    // CAMERA SCANNER
+    // V10.1 camera foundation: permission -> live preview -> capture
+    // -> retake/use photo. OCR/medicine recognition is intentionally
+    // not performed yet.
+    // ============================================================
+    const cameraOpenButton = document.getElementById("cameraOpenButton");
+    const cameraModal = document.getElementById("cameraModal");
+    const cameraVideo = document.getElementById("cameraVideo");
+    const cameraPhoto = document.getElementById("cameraPhoto");
+    const cameraCanvas = document.getElementById("cameraCanvas");
+    const cameraCaptureButton = document.getElementById("cameraCaptureButton");
+    const cameraRetakeButton = document.getElementById("cameraRetakeButton");
+    const cameraUsePhotoButton = document.getElementById("cameraUsePhotoButton");
+    const cameraCloseButton = document.getElementById("cameraCloseButton");
+    const cameraCloseButton2 = document.getElementById("cameraCloseButton2");
+    const cameraError = document.getElementById("cameraError");
+    const cameraResult = document.getElementById("cameraResult");
+    const cameraHint = document.getElementById("cameraHint");
+
+    let cameraStream = null;
+    let capturedPhotoDataUrl = "";
+
+    function showCameraError(message) {
+        cameraError.textContent = message;
+        cameraError.classList.add("show");
+    }
+
+    function clearCameraError() {
+        cameraError.textContent = "";
+        cameraError.classList.remove("show");
+    }
+
+    function stopCameraStream() {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(function (track) {
+                track.stop();
+            });
+            cameraStream = null;
+        }
+        cameraVideo.srcObject = null;
+    }
+
+    function resetCameraView() {
+        capturedPhotoDataUrl = "";
+        cameraPhoto.removeAttribute("src");
+        cameraPhoto.style.display = "none";
+        cameraVideo.style.display = "block";
+        cameraCaptureButton.disabled = false;
+        cameraRetakeButton.disabled = true;
+        cameraUsePhotoButton.disabled = true;
+        cameraResult.classList.remove("show");
+        cameraHint.textContent =
+            "Place the medicine strip or box inside the guide and keep it steady.";
+    }
+
+    async function openCamera() {
+        clearCameraError();
+        resetCameraView();
+
+        if (!window.isSecureContext) {
+            showCameraError(
+                "Camera access needs HTTPS. Open the HTTPS MediCompare website on your phone."
+            );
+            cameraModal.classList.add("show");
+            cameraModal.setAttribute("aria-hidden", "false");
+            return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showCameraError(
+                "Camera access is not supported by this browser. Try Chrome on Android."
+            );
+            cameraModal.classList.add("show");
+            cameraModal.setAttribute("aria-hidden", "false");
+            return;
+        }
+
+        cameraModal.classList.add("show");
+        cameraModal.setAttribute("aria-hidden", "false");
+
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { ideal: "environment" },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            });
+
+            cameraVideo.srcObject = cameraStream;
+            await cameraVideo.play();
+            cameraHint.textContent =
+                "Camera ready. Keep the medicine name and strength clearly visible.";
+        } catch (error) {
+            console.error("Camera access error:", error);
+
+            let message =
+                "Could not access the camera. Please allow camera permission and try again.";
+
+            if (error && error.name === "NotAllowedError") {
+                message =
+                    "Camera permission was denied. Allow camera access in your browser settings and try again.";
+            } else if (error && error.name === "NotFoundError") {
+                message =
+                    "No camera was found on this device.";
+            } else if (error && error.name === "NotReadableError") {
+                message =
+                    "The camera is busy in another app. Close that app and try again.";
+            }
+
+            showCameraError(message);
+        }
+    }
+
+    function closeCamera() {
+        stopCameraStream();
+        cameraModal.classList.remove("show");
+        cameraModal.setAttribute("aria-hidden", "true");
+    }
+
+    function capturePhoto() {
+        if (!cameraStream || !cameraVideo.videoWidth || !cameraVideo.videoHeight) {
+            showCameraError("Camera is not ready yet. Please wait a moment and try again.");
+            return;
+        }
+
+        const maxWidth = 1280;
+        const scale = Math.min(1, maxWidth / cameraVideo.videoWidth);
+        cameraCanvas.width = Math.round(cameraVideo.videoWidth * scale);
+        cameraCanvas.height = Math.round(cameraVideo.videoHeight * scale);
+
+        const context = cameraCanvas.getContext("2d");
+        context.drawImage(
+            cameraVideo,
+            0,
+            0,
+            cameraCanvas.width,
+            cameraCanvas.height
+        );
+
+        capturedPhotoDataUrl = cameraCanvas.toDataURL("image/jpeg", 0.88);
+        cameraPhoto.src = capturedPhotoDataUrl;
+        cameraVideo.style.display = "none";
+        cameraPhoto.style.display = "block";
+
+        cameraCaptureButton.disabled = true;
+        cameraRetakeButton.disabled = false;
+        cameraUsePhotoButton.disabled = false;
+        cameraResult.classList.add("show");
+        cameraHint.textContent =
+            "Check the photo. Retake it if the medicine name, strength or pack size is unclear.";
+
+        // The live camera is no longer needed after capture.
+        stopCameraStream();
+    }
+
+    cameraOpenButton.addEventListener("click", openCamera);
+    cameraCaptureButton.addEventListener("click", capturePhoto);
+    cameraRetakeButton.addEventListener("click", openCamera);
+
+    cameraUsePhotoButton.addEventListener("click", function () {
+        if (!capturedPhotoDataUrl) return;
+
+        // Keep the captured image ready for the upcoming OCR/recognition stage.
+        // No fake medicine name is inserted into the search box.
+        cameraHint.textContent =
+            "Photo selected. Medicine recognition will be connected in the next camera step.";
+        cameraResult.textContent =
+            "Photo selected successfully. OCR/medicine recognition is not enabled yet.";
+        cameraResult.classList.add("show");
+    });
+
+    cameraCloseButton.addEventListener("click", closeCamera);
+    cameraCloseButton2.addEventListener("click", closeCamera);
+
+    cameraModal.addEventListener("click", function (event) {
+        if (event.target === cameraModal) {
+            closeCamera();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && cameraModal.classList.contains("show")) {
+            closeCamera();
+        }
+    });
 
 
     // ============================================================
