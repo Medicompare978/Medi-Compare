@@ -58,7 +58,8 @@ PARSE_BASE_URL = "https://api.parse.bot/scraper"
 #    API calls for the same pharmacy + query.
 #
 # Local development uses SQLite. Production should move this schema to a
-# persistent PostgreSQL/managed DB before launch on Render.
+# persistent PostgreSQL/managed DB before launch on Render so cache/catalogue
+# and provider usage are shared across restarts and multiple workers.
 
 DB_PATH = os.getenv("MEDICOMPARE_DB_PATH", "medicompare.db")
 CACHE_TTL_SECONDS = int(os.getenv("MEDICOMPARE_CACHE_TTL", str(6 * 60 * 60)))
@@ -74,6 +75,18 @@ DEFAULT_PROVIDER_COOLDOWN_SECONDS = int(
 # Keep it configurable because Parse/provider plans can change.
 DEFAULT_DAILY_PROVIDER_CALL_LIMIT = int(
     os.getenv("MEDICOMPARE_DAILY_PROVIDER_CALL_LIMIT", "40")
+)
+
+# App-level outbound rate protection. These are safety settings, not the
+# provider's official quota. Tune them to the connected provider plan.
+PROVIDER_MIN_INTERVAL_SECONDS = float(
+    os.getenv("MEDICOMPARE_PROVIDER_MIN_INTERVAL", "2")
+)
+PROVIDER_QUEUE_TIMEOUT_SECONDS = int(
+    os.getenv("MEDICOMPARE_PROVIDER_QUEUE_TIMEOUT", "120")
+)
+PROVIDER_QUEUE_MAXSIZE = int(
+    os.getenv("MEDICOMPARE_PROVIDER_QUEUE_MAXSIZE", "100")
 )
 
 # SQLite concurrency helpers.
@@ -759,6 +772,142 @@ def get_catalogue_latest_timestamp(pharmacy, products):
     return float(row["latest"]) if row and row["latest"] else None
 
 
+
+# ============================================================
+# PROVIDER REQUEST QUEUE / RATE SHIELD
+# ============================================================
+# One worker per pharmacy serializes outbound calls. This prevents bursts
+# when several users search different medicines at the same time.
+# The worker re-checks cooldown + daily safety budget immediately before
+# the network request, so queued requests do not consume quota just by
+# entering the queue.
+
+class ProviderJob:
+    def __init__(self, pharmacy, query, fetch_products):
+        self.pharmacy = pharmacy
+        self.query = query
+        self.fetch_products = fetch_products
+        self.done = threading.Event()
+        self.result = None
+
+
+provider_queues = {}
+provider_workers_started = set()
+provider_queue_guard = threading.Lock()
+provider_last_call_at = {}
+
+
+def get_provider_queue(pharmacy):
+    with provider_queue_guard:
+        if pharmacy not in provider_queues:
+            provider_queues[pharmacy] = queue.Queue(maxsize=PROVIDER_QUEUE_MAXSIZE)
+        if pharmacy not in provider_workers_started:
+            worker = threading.Thread(
+                target=provider_worker,
+                args=(pharmacy,),
+                name=f"provider-worker-{pharmacy}",
+                daemon=True,
+            )
+            worker.start()
+            provider_workers_started.add(pharmacy)
+        return provider_queues[pharmacy]
+
+
+def provider_worker(pharmacy):
+    q = provider_queues[pharmacy]
+    while True:
+        job = q.get()
+        try:
+            blocked, state = provider_is_blocked(pharmacy)
+            if blocked:
+                remaining = int(max(0, state.get("blocked_until", 0) - time.time()))
+                job.result = {
+                    "ok": False,
+                    "status_code": 429,
+                    "error": state.get("last_error") or f"Provider cooldown active (~{remaining}s)",
+                }
+                continue
+
+            allowed, count = can_call_provider(pharmacy)
+            if not allowed:
+                job.result = {
+                    "ok": False,
+                    "status_code": 429,
+                    "error": f"MediCompare provider call safety limit reached ({count})",
+                }
+                continue
+
+            with provider_queue_guard:
+                previous = provider_last_call_at.get(pharmacy, 0)
+            wait_seconds = max(
+                0,
+                PROVIDER_MIN_INTERVAL_SECONDS - (time.time() - previous),
+            )
+            if wait_seconds:
+                time.sleep(wait_seconds)
+
+            # Re-check after the wait because another state change could have
+            # happened while this job was sleeping.
+            blocked, state = provider_is_blocked(pharmacy)
+            if blocked:
+                job.result = {
+                    "ok": False,
+                    "status_code": 429,
+                    "error": state.get("last_error") or "Provider cooldown active",
+                }
+                continue
+
+            allowed, count = can_call_provider(pharmacy)
+            if not allowed:
+                job.result = {
+                    "ok": False,
+                    "status_code": 429,
+                    "error": f"MediCompare provider call safety limit reached ({count})",
+                }
+                continue
+
+            # Count only a call that is actually going out.
+            record_provider_call(pharmacy)
+            print(f"{pharmacy}: QUEUE EXECUTE for '{normalize_query(job.query)}'")
+            job.result = job.fetch_products(job.query)
+            with provider_queue_guard:
+                provider_last_call_at[pharmacy] = time.time()
+
+        except Exception as exc:
+            job.result = {
+                "ok": False,
+                "status_code": 0,
+                "error": f"Provider queue worker error: {exc}",
+            }
+        finally:
+            job.done.set()
+            q.task_done()
+
+
+def fetch_through_provider_queue(pharmacy, query, fetch_products):
+    try:
+        q = get_provider_queue(pharmacy)
+        job = ProviderJob(pharmacy, query, fetch_products)
+        q.put(job, timeout=PROVIDER_QUEUE_TIMEOUT_SECONDS)
+        if not job.done.wait(timeout=PROVIDER_QUEUE_TIMEOUT_SECONDS + 10):
+            return {
+                "ok": False,
+                "status_code": 503,
+                "error": "Provider request queue timed out; saved data will be used if available.",
+            }
+        return job.result or {
+            "ok": False,
+            "status_code": 503,
+            "error": "Provider queue returned no result.",
+        }
+    except queue.Full:
+        return {
+            "ok": False,
+            "status_code": 503,
+            "error": "Provider request queue is busy; saved data will be used if available.",
+        }
+
+
 def cached_search(pharmacy, query, fetch_products):
     """Shared catalogue + cache + quota protection.
 
@@ -900,10 +1049,10 @@ def cached_search(pharmacy, query, fetch_products):
                 return cached["products"], cached["fetched_at"], "stale"
             return [], None, "budget"
 
-        # IMPORTANT: network call happens OUTSIDE db_lock.
-        # This avoids blocking unrelated users/searches on SQLite.
-        record_provider_call(pharmacy)
-        result = fetch_products(query)
+        # IMPORTANT: network call happens OUTSIDE db_lock and inside the
+        # provider queue worker. This keeps outbound traffic serialized per
+        # pharmacy while allowing unrelated database work to continue.
+        result = fetch_through_provider_queue(pharmacy, query, fetch_products)
 
         if result.get("ok"):
             products = result.get("products", [])
