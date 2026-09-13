@@ -3437,15 +3437,15 @@ HTML = r"""
     const GRAVITY_ALPHA = 0.88;
     const SIGNAL_ALPHA = 0.32;
     const NOISE_ALPHA = 0.035;
-    const MIN_DYNAMIC_PEAK = 0.22;
-    const PEAK_MARGIN = 0.18;
-    const STEP_MIN_INTERVAL_MS = 300;
-    const STEP_MAX_INTERVAL_MS = 1350;
-    const WALK_CONFIRM_CANDIDATES = 3;
-    const WALK_INTERVAL_TOLERANCE = 0.38;
-    const WALK_AMPLITUDE_TOLERANCE = 0.75;
-    const WALK_START_TIMEOUT_MS = 2200;
-    const WALK_BREAK_TIMEOUT_MS = 1750;
+    const MIN_DYNAMIC_PEAK = 0.32;
+    const PEAK_MARGIN = 0.28;
+    const STEP_MIN_INTERVAL_MS = 380;
+    const STEP_MAX_INTERVAL_MS = 1050;
+    const WALK_CONFIRM_CANDIDATES = 5;
+    const WALK_INTERVAL_TOLERANCE = 0.22;
+    const WALK_AMPLITUDE_TOLERANCE = 0.50;
+    const WALK_START_TIMEOUT_MS = 1800;
+    const WALK_BREAK_TIMEOUT_MS = 1250;
 
     let candidateTimes = [];
     let candidateAmplitudes = [];
@@ -3544,11 +3544,16 @@ HTML = r"""
 
         // Confirm after three rhythmic candidates, then count those three
         // immediately so the first walking steps are not lost.
+        // Do NOT count candidate peaks yet. We first require a longer,
+        // stable walking rhythm. This is deliberately conservative so that
+        // shaking/moving the phone while seated does not become steps.
         if (!confirmedWalking && candidateTimes.length >= WALK_CONFIRM_CANDIDATES) {
             if (cadenceIsRegular(candidateTimes) &&
                 amplitudesAreWalkingLike(candidateAmplitudes)) {
-                addConfirmedSteps(3);
                 confirmedWalking = true;
+                // Count only the last validated candidate. Earlier candidates
+                // are confirmation evidence, not automatically steps.
+                addConfirmedSteps(1);
                 lastConfirmedTime = now;
                 return;
             }
