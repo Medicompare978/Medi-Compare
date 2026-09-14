@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, send_file
+from flask import Flask, render_template_string, request, send_file, Response
 import requests
 import os
 import json
@@ -8,6 +8,8 @@ import queue
 import time
 import hashlib
 import difflib
+import re
+from urllib.parse import urlparse
 from io import BytesIO
 
 try:
@@ -216,6 +218,85 @@ def first_value(product, *keys):
     return None
 
 
+def extract_product_url(product):
+    """Return a usable product-page URL from common provider response shapes."""
+    if not isinstance(product, dict):
+        return None
+
+    value = first_value(
+        product,
+        "product_url",
+        "url",
+        "link",
+        "productUrl",
+        "product_link",
+        "productLink",
+        "page_url",
+        "pageUrl",
+    )
+
+    if isinstance(value, dict):
+        value = first_value(value, "url", "href", "link")
+
+    return str(value).strip() if value else None
+
+
+def extract_image_url(product):
+    """Extract an image URL from common flat or nested pharmacy fields."""
+    if not isinstance(product, dict):
+        return None
+
+    value = first_value(
+        product,
+        "image_url",
+        "image",
+        "imageUrl",
+        "image_url_1",
+        "imageUrl1",
+        "thumbnail",
+        "thumbnail_url",
+        "thumbnailUrl",
+        "primary_image",
+        "primaryImage",
+        "image_link",
+        "imageLink",
+    )
+
+    def from_value(item):
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+        if isinstance(item, dict):
+            nested = first_value(
+                item,
+                "url",
+                "src",
+                "href",
+                "image_url",
+                "imageUrl",
+            )
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+        return None
+
+    found = from_value(value)
+    if found:
+        return found
+
+    for key in ("images", "image_urls", "imageUrls", "photos", "gallery"):
+        collection = product.get(key)
+        if isinstance(collection, (list, tuple)):
+            for item in collection:
+                found = from_value(item)
+                if found:
+                    return found
+        else:
+            found = from_value(collection)
+            if found:
+                return found
+
+    return None
+
+
 def to_float(value, default=None):
     try:
         if value is None or value == "":
@@ -328,6 +409,17 @@ def get_products_by_keys(product_keys):
         if not row:
             continue
 
+        raw_product = {}
+        try:
+            raw_product = json.loads(row["raw_json"] or "{}")
+            if not isinstance(raw_product, dict):
+                raw_product = {}
+        except (TypeError, json.JSONDecodeError):
+            raw_product = {}
+
+        product_url = row["product_url"] or extract_product_url(raw_product)
+        image_url = row["image_url"] or extract_image_url(raw_product)
+
         products.append(
             {
                 "name": row["name"],
@@ -339,8 +431,8 @@ def get_products_by_keys(product_keys):
                 "discount_percentage": row["discount_percentage"],
                 "availability": row["availability"],
                 "is_prescription_required": bool(row["is_prescription_required"]),
-                "product_url": row["product_url"],
-                "image_url": row["image_url"],
+                "product_url": product_url,
+                "image_url": image_url,
             }
         )
 
@@ -361,6 +453,9 @@ def upsert_products(pharmacy, products):
             for product in products:
                 if not isinstance(product, dict):
                     continue
+
+                product_url = extract_product_url(product)
+                image_url = extract_image_url(product)
 
                 key = product.get("_product_key") or make_product_key(pharmacy, product)
                 product_keys.append(key)
@@ -413,8 +508,8 @@ def upsert_products(pharmacy, products):
                         to_float(product.get("discount_percentage")),
                         str(product.get("availability")) if product.get("availability") is not None else None,
                         1 if parse_bool(product.get("is_prescription_required")) else 0,
-                        product.get("product_url"),
-                        product.get("image_url"),
+                        product_url,
+                        image_url,
                         serialize_product(product),
                         now,
                         now,
@@ -591,7 +686,29 @@ def set_provider_state(pharmacy, status, error=None, cooldown_seconds=0):
 
 def provider_is_blocked(pharmacy):
     state = get_provider_state(pharmacy)
-    return float(state.get("blocked_until") or 0) > time.time(), state
+    blocked_until = float(state.get("blocked_until") or 0)
+    return blocked_until > time.time(), state
+
+
+def format_cooldown_remaining(blocked_until):
+    """Return a safe, human-readable cooldown duration; never show negatives."""
+    try:
+        remaining = max(0, int(float(blocked_until or 0) - time.time()))
+    except (TypeError, ValueError):
+        remaining = 0
+
+    if remaining <= 0:
+        return "available soon"
+
+    minutes = (remaining + 59) // 60
+    if minutes < 60:
+        return f"about {minutes} min"
+
+    hours = minutes // 60
+    mins = minutes % 60
+    if mins:
+        return f"about {hours} hr {mins} min"
+    return f"about {hours} hr"
 
 
 def get_retry_after_seconds(error_text):
@@ -671,6 +788,34 @@ def _catalogue_text(product):
 
 def _query_tokens(query):
     return [token for token in normalize_query(query).split() if token]
+
+
+def filter_exact_strength_results(query, products):
+    """Remove unrelated provider results for searches containing a strength.
+
+    Example: a search for Dolo 650 must not show Tiger Balm, lozenges,
+    thermometers, etc. The filter requires every query token to appear in the
+    product name/composition/pack text. Broad symptom searches remain unchanged.
+    """
+    if not products:
+        return []
+
+    tokens = _query_tokens(query)
+    if not tokens or not any(re.search(r"\d", token) for token in tokens):
+        return products
+
+    filtered = []
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+        searchable = normalize_query(" ".join(
+            str(product.get(key) or "")
+            for key in ("name", "product_name", "composition", "pack_size", "manufacturer")
+        ))
+        if all(token in searchable for token in tokens):
+            filtered.append(product)
+
+    return filtered
 
 
 def search_shared_catalogue(pharmacy, query, limit=30):
@@ -821,11 +966,12 @@ def provider_worker(pharmacy):
         try:
             blocked, state = provider_is_blocked(pharmacy)
             if blocked:
-                remaining = int(max(0, state.get("blocked_until", 0) - time.time()))
+                remaining_label = format_cooldown_remaining(state.get("blocked_until", 0))
                 job.result = {
                     "ok": False,
                     "status_code": 429,
-                    "error": state.get("last_error") or f"Provider cooldown active (~{remaining}s)",
+                    "error": state.get("last_error")
+                    or f"Provider cooldown active ({remaining_label})",
                 }
                 continue
 
@@ -1031,9 +1177,9 @@ def cached_search(pharmacy, query, fetch_products):
 
         blocked, state = provider_is_blocked(pharmacy)
         if blocked:
-            remaining = int(max(0, state["blocked_until"] - time.time()))
+            remaining_label = format_cooldown_remaining(state.get("blocked_until", 0))
             print(
-                f"{pharmacy}: PROVIDER COOLDOWN active; ~{remaining}s remaining "
+                f"{pharmacy}: PROVIDER COOLDOWN active; {remaining_label} remaining "
                 f"for '{normalize_query(query)}'"
             )
             if cached and cached["age_seconds"] <= STALE_CACHE_MAX_SECONDS:
@@ -1263,23 +1409,7 @@ def normalize_pharmeasy_products(products):
             "in_stock",
         )
 
-        image_value = first_value(
-            product,
-            "image_url",
-            "image",
-            "imageUrl",
-            "image_url_1",
-            "thumbnail",
-            "thumbnail_url",
-        )
-
-        if isinstance(image_value, dict):
-            image_value = first_value(
-                image_value,
-                "url",
-                "src",
-                "image_url",
-            )
+        image_value = extract_image_url(product)
 
         normalized.append(
             {
@@ -1319,12 +1449,7 @@ def normalize_pharmeasy_products(products):
                 ),
                 "availability": availability,
                 "is_prescription_required": parse_bool(prescription),
-                "product_url": first_value(
-                    product,
-                    "product_url",
-                    "url",
-                    "link",
-                ),
+                "product_url": extract_product_url(product),
                 "image_url": image_value,
             }
         )
@@ -1339,7 +1464,9 @@ def normalize_pharmeasy_products(products):
 def fetch_apollo_products(query):
     result = search_apollo(query)
     if isinstance(result, dict) and result.get("status") == "success":
-        return {"ok": True, "products": get_products(result)}
+        products = get_products(result)
+        products = filter_exact_strength_results(query, products)
+        return {"ok": True, "products": products}
 
     return {
         "ok": False,
@@ -1378,9 +1505,20 @@ def fetch_pharmeasy_products(query):
 def format_cache_meta(fetched_at, source):
     if fetched_at is None:
         if source == "blocked":
-            return {"label": "⏳ Provider temporarily limited", "source": source}
+            return {
+                "label": "⏳ Live data temporarily unavailable",
+                "source": source,
+            }
         if source == "budget":
-            return {"label": "⏳ Provider call limit protected", "source": source}
+            return {
+                "label": "⏳ Live data temporarily limited",
+                "source": source,
+            }
+        if source == "error":
+            return {
+                "label": "⚠️ Live data unavailable",
+                "source": source,
+            }
         return {"label": "Price data unavailable", "source": source}
 
     age_seconds = max(0, time.time() - float(fetched_at))
@@ -2433,6 +2571,28 @@ HTML = r"""
             line-height: 1.3;
         }
 
+        .error {
+            max-width: 1050px;
+            margin: 14px auto 18px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #fff8e8;
+            border: 1px solid #f2dfaa;
+            color: #795f16;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.5;
+            box-shadow: 0 4px 14px rgba(100, 80, 20, 0.06);
+        }
+
+        @media (max-width: 600px) {
+            .error {
+                margin: 12px 0 16px;
+                padding: 12px 13px;
+                font-size: 12px;
+            }
+        }
+
         .products {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
@@ -3287,6 +3447,29 @@ HTML = r"""
             display: block;
         }
 
+        /* After generation, keep the result visible and remove the
+           input controls from the way so users immediately see the chart. */
+        .diet-inputs-hidden {
+            display: none !important;
+        }
+
+        .diet-generate-hidden {
+            display: none !important;
+        }
+
+        .diet-result-status {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 800;
+            color: #087f5b;
+            background: #e8f8f2;
+            border-radius: 999px;
+            padding: 8px 12px;
+            width: fit-content;
+            max-width: 100%;
+            margin: 0 auto 12px;
+        }
+
         .diet-result h3 {
             color: #087f5b;
             text-align: center;
@@ -3763,6 +3946,20 @@ HTML = r"""
 
                 {% endif %}
 
+
+                {% if product.product_url %}
+
+                <a
+                    href="{{ product.product_url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="buy-button"
+                >
+                    🛒 Buy on Apollo ↗
+                </a>
+
+                {% endif %}
+
             </div>
 
         </article>
@@ -3818,8 +4015,8 @@ HTML = r"""
             <div class="product-image-box">
 
                 <img
-                    src="{{ product.image_url }}"
-                    alt="{{ product.product_name }}"
+                    src="{{ url_for('image_proxy') }}?url={{ product.image_url|urlencode }}"
+                    alt="{{ product.name }}"
                     class="product-image"
                     loading="lazy"
                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
@@ -3840,7 +4037,7 @@ HTML = r"""
             <div class="card-body">
 
                 <div class="product-name">
-                    {{ product.product_name or "Unnamed medicine" }}
+                    {{ product.name or "Unnamed medicine" }}
                 </div>
 
 
@@ -4001,7 +4198,7 @@ HTML = r"""
             <div class="product-image-box">
 
                 <img
-                    src="{{ product.image_url }}"
+                    src="{{ url_for('image_proxy') }}?url={{ product.image_url|urlencode }}"
                     alt="{{ product.name }}"
                     class="product-image"
                     loading="lazy"
@@ -4198,6 +4395,7 @@ HTML = r"""
         <button type="button" class="diet-generate" id="dietGenerate">Generate My Diet Chart</button>
 
         <div class="diet-result" id="dietResult">
+            <div class="diet-result-status">✓ Diet chart generated</div>
             <h3>🥗 Your Daily Wellness Plan</h3>
             <div class="diet-profile" id="dietProfile"></div>
 
@@ -5574,6 +5772,14 @@ HTML = r"""
         dietBreakfast.textContent = guide.breakfast;
         dietLunch.textContent = guide.lunch;
         dietDinner.textContent = guide.dinner;
+        // Once the chart is generated, hide the input area so the result
+        // becomes the clear focus. The values remain in the hidden fields
+        // so the PDF download continues to use the generated chart data.
+        const dietFormGrid = document.querySelector(".diet-form-grid");
+        if (dietFormGrid) {
+            dietFormGrid.classList.add("diet-inputs-hidden");
+        }
+        dietGenerate.classList.add("diet-generate-hidden");
         dietResult.classList.add("show");
 
         lastDietText =
@@ -5812,6 +6018,57 @@ def ocr_match():
     return {"matches": results[:8]}
 
 
+@app.route("/image-proxy", methods=["GET"])
+def image_proxy():
+    """Safely proxy pharmacy product images when browser hotlinking/CDNs fail."""
+    image_url = request.args.get("url", "").strip()
+    if not image_url:
+        return Response("Missing image URL", status=400, mimetype="text/plain")
+
+    try:
+        parsed = urlparse(image_url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return Response("Invalid image URL", status=400, mimetype="text/plain")
+
+    allowed = (
+        host.endswith(".pharmeasy.in")
+        or host.endswith(".medplusmart.com")
+        or host.endswith(".medplusindia.com")
+    )
+    if parsed.scheme not in {"http", "https"} or not allowed:
+        return Response("Image host not allowed", status=403, mimetype="text/plain")
+
+    try:
+        response = requests.get(
+            image_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 MediCompare/1.0",
+                "Referer": "https://pharmeasy.in/" if host.endswith("pharmeasy.in") else "https://www.medplusmart.com/",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            },
+            timeout=15,
+        )
+
+        if response.status_code != 200 or not response.content:
+            return Response("Image unavailable", status=404, mimetype="text/plain")
+
+        content_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        if not content_type.startswith("image/"):
+            return Response("Invalid image response", status=415, mimetype="text/plain")
+
+        if len(response.content) > 8 * 1024 * 1024:
+            return Response("Image too large", status=413, mimetype="text/plain")
+
+        proxy_response = Response(response.content, status=200, content_type=content_type)
+        proxy_response.headers["Cache-Control"] = "public, max-age=86400"
+        return proxy_response
+
+    except requests.RequestException as exc:
+        print("Image proxy error:", exc)
+        return Response("Image unavailable", status=502, mimetype="text/plain")
+
+
 @app.route("/", methods=["GET"])
 def home():
 
@@ -5849,6 +6106,13 @@ def home():
                 searched_medicine,
                 fetch_apollo_products,
             )
+            # The Apollo API can return broad related products. Keep the
+            # exact-strength guard active even for old cached/catalogue data.
+            apollo_products = filter_exact_strength_results(
+                searched_medicine,
+                apollo_products,
+            )
+
             cache_meta["apollo"] = format_cache_meta(
                 apollo_checked_at,
                 apollo_source,
@@ -5887,10 +6151,41 @@ def home():
                 and not medplus_products
                 and not pharmeasy_products
             ):
-                error_message = (
-                    "No results were returned. Try a more specific medicine "
-                    "name or strength."
-                )
+                blocked_providers = []
+                budget_providers = []
+
+                for pharmacy in ("apollo", "medplus", "pharmeasy"):
+                    blocked, state = provider_is_blocked(pharmacy)
+                    if blocked:
+                        blocked_providers.append(pharmacy.title())
+
+                for pharmacy, source in (
+                    ("apollo", apollo_source),
+                    ("medplus", medplus_source),
+                    ("pharmeasy", pharmeasy_source),
+                ):
+                    if source == "budget":
+                        budget_providers.append(pharmacy.title())
+
+                if blocked_providers:
+                    names = ", ".join(blocked_providers)
+                    error_message = (
+                        "Live pharmacy data is temporarily unavailable for this search "
+                        f"({names}). We don't have previously saved results for this "
+                        "medicine yet. Please try again shortly."
+                    )
+                elif budget_providers:
+                    names = ", ".join(budget_providers)
+                    error_message = (
+                        "Live pharmacy data is temporarily limited for this search "
+                        f"({names}). We don't have previously saved results for this "
+                        "medicine yet. Please try again later."
+                    )
+                else:
+                    error_message = (
+                        "No results were found. Try a more specific medicine name, "
+                        "strength, or pack size."
+                    )
 
     return render_template_string(
         HTML,
