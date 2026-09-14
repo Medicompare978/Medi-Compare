@@ -3247,7 +3247,7 @@ HTML = r"""
             width: min(680px, calc(100% - 20px));
             z-index: 1000;
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 6px;
             padding: 7px;
             background: rgba(255,255,255,0.97);
@@ -3304,6 +3304,30 @@ HTML = r"""
             margin-top: 1px;
         }
 
+        /* ============================================================
+           NEARBY HOSPITALS
+        ============================================================ */
+        .hospital-panel { display:none; animation:navPanelIn .35s ease both; }
+        body.hospital-mode .hospital-panel { display:block; }
+        body.hospital-mode .main-content-for-nav, body.hospital-mode .diet-panel { display:none; }
+        .hospital-card { background:linear-gradient(135deg,#f7fbff,#eef6ff); border:1px solid #d7e8f5; border-radius:24px; padding:24px 20px; box-shadow:0 8px 24px rgba(30,70,110,.07); margin-top:18px; }
+        .hospital-heading { text-align:center; color:#1769aa; font-size:clamp(24px,5vw,34px); margin:4px 0 8px; }
+        .hospital-subheading { text-align:center; color:#687873; margin:0 0 22px; font-size:15px; }
+        .hospital-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .hospital-field label { display:block; font-weight:700; color:#315064; margin:0 0 7px; }
+        .hospital-field input { width:100%; border:1px solid #cfe0ec; border-radius:14px; padding:14px 13px; font-size:16px; background:white; color:#20312c; outline:none; }
+        .hospital-field input:focus { border-color:#3d8dcc; box-shadow:0 0 0 3px rgba(61,141,204,.12); }
+        .hospital-search-button { width:100%; margin-top:18px; border:0; border-radius:15px; min-height:52px; background:#1769aa; color:white; font-size:17px; font-weight:800; cursor:pointer; }
+        .hospital-search-button:active { transform:scale(.98); }
+        .hospital-result { display:none; margin-top:20px; background:white; border:1px solid #dceaf3; border-radius:18px; padding:18px; }
+        .hospital-result.show { display:block; animation:navPanelIn .35s ease both; }
+        .hospital-result-title { margin:0 0 6px; color:#1769aa; font-size:20px; }
+        .hospital-result-note { margin:0 0 14px; color:#61736e; font-size:13px; line-height:1.45; }
+        .hospital-link-list { display:grid; gap:10px; }
+        .hospital-map-link { display:flex; align-items:center; justify-content:space-between; gap:12px; text-decoration:none; color:#1769aa; background:#f4f9fd; border:1px solid #d8e8f3; border-radius:13px; padding:14px 15px; font-weight:800; }
+        .hospital-map-link:hover { background:#eaf4fb; transform:translateY(-1px); }
+        .hospital-map-link span:last-child { font-size:18px; }
+
         .diet-panel {
             display: none;
             animation: navPanelIn .35s ease both;
@@ -3316,6 +3340,8 @@ HTML = r"""
         body.diet-mode .main-content-for-nav {
             display: none;
         }
+
+        body.hospital-mode .main-content-for-nav { display:none; }
 
         body.step-mode .main-content-for-nav > .search-form,
         body.step-mode .main-content-for-nav > .search-status,
@@ -3534,6 +3560,10 @@ HTML = r"""
             .diet-form-grid { grid-template-columns: 1fr; }
             .diet-full { grid-column: auto; }
             .diet-card { padding: 20px 15px; }
+            .hospital-form-grid { grid-template-columns: 1fr; }
+            .hospital-card { padding: 20px 15px; }
+            .app-nav-button .nav-label { font-size: 11px; }
+            .app-nav-button .nav-icon { font-size: 23px; }
         }
 
 
@@ -4412,6 +4442,27 @@ HTML = r"""
     </div>
 </div>
 
+<!-- ============================================================
+     NEARBY HOSPITALS SECTION
+============================================================ -->
+<div class="hospital-panel" id="hospitalPanel">
+    <div class="hospital-card">
+        <div style="text-align:center;font-size:42px;line-height:1;">🏥</div>
+        <h2 class="hospital-heading">Nearby Hospitals</h2>
+        <p class="hospital-subheading">Enter your state and PIN code to find hospitals in Google Maps.</p>
+        <div class="hospital-form-grid">
+            <div class="hospital-field"><label for="hospitalState">State</label><input id="hospitalState" type="text" maxlength="60" placeholder="Enter your state"></div>
+            <div class="hospital-field"><label for="hospitalPincode">PIN code</label><input id="hospitalPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter PIN code"></div>
+        </div>
+        <button type="button" class="hospital-search-button" id="hospitalSearchButton">🔎 Search Nearby Hospitals</button>
+        <div class="hospital-result" id="hospitalResult">
+            <h3 class="hospital-result-title" id="hospitalResultTitle">Hospitals near your area</h3>
+            <p class="hospital-result-note">Tap any option below to open Google Maps. Google Maps will show available hospitals around the entered PIN code and state.</p>
+            <div class="hospital-link-list" id="hospitalLinkList"></div>
+        </div>
+    </div>
+</div>
+
 </main>
 
 
@@ -4504,6 +4555,10 @@ HTML = r"""
     <button type="button" class="app-nav-button" id="navDiet" data-section="diet">
         <span class="nav-icon">🍎</span>
         <span class="nav-label">Diet</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navHospitals" data-section="hospitals">
+        <span class="nav-icon">🏥</span>
+        <span class="nav-label">Hospitals</span>
     </button>
 </nav>
 
@@ -5671,6 +5726,7 @@ HTML = r"""
     const navBuyMedi = document.getElementById("navBuyMedi");
     const navStepCounter = document.getElementById("navStepCounter");
     const navDiet = document.getElementById("navDiet");
+    const navHospitals = document.getElementById("navHospitals");
     const dietPanel = document.getElementById("dietPanel");
     const mainContentForNav = document.getElementById("mainContentForNav");
 
@@ -5685,7 +5741,7 @@ HTML = r"""
     }
 
     navBuyMedi.addEventListener("click", function () {
-        document.body.classList.remove("step-mode", "diet-mode");
+        document.body.classList.remove("step-mode", "diet-mode", "hospital-mode");
         document.body.classList.add("buy-mode");
         mainContentForNav.classList.remove("buy-mode");
         void mainContentForNav.offsetWidth;
@@ -5695,17 +5751,86 @@ HTML = r"""
     });
 
     navStepCounter.addEventListener("click", function () {
-        document.body.classList.remove("buy-mode", "diet-mode");
+        document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode");
         document.body.classList.add("step-mode");
         setActiveNav(navStepCounter);
         scrollToTopOfContent();
     });
 
     navDiet.addEventListener("click", function () {
-        document.body.classList.remove("buy-mode", "step-mode");
+        document.body.classList.remove("buy-mode", "step-mode", "hospital-mode");
         document.body.classList.add("diet-mode");
         setActiveNav(navDiet);
         scrollToTopOfContent();
+    });
+
+    navHospitals.addEventListener("click", function () {
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode");
+        document.body.classList.add("hospital-mode");
+        setActiveNav(navHospitals);
+        scrollToTopOfContent();
+    });
+
+    // ============================================================
+    // NEARBY HOSPITALS
+    // State + PIN code -> Google Maps hospital searches.
+    // ============================================================
+    const hospitalState = document.getElementById("hospitalState");
+    const hospitalPincode = document.getElementById("hospitalPincode");
+    const hospitalSearchButton = document.getElementById("hospitalSearchButton");
+    const hospitalResult = document.getElementById("hospitalResult");
+    const hospitalResultTitle = document.getElementById("hospitalResultTitle");
+    const hospitalLinkList = document.getElementById("hospitalLinkList");
+
+    function buildGoogleMapsHospitalUrl(query) {
+        return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
+    }
+
+    function renderHospitalLinks(state, pincode) {
+        const area = pincode + ", " + state + ", India";
+        const searches = [
+            ["🏥 All Hospitals", "hospitals near " + area],
+            ["🚑 Emergency Hospitals", "emergency hospitals near " + area],
+            ["🏛️ Government Hospitals", "government hospitals near " + area],
+            ["🏨 Private Hospitals", "private hospitals near " + area],
+            ["🩺 24 Hour Hospitals", "24 hour hospitals near " + area]
+        ];
+        hospitalLinkList.innerHTML = "";
+        searches.forEach(function (item) {
+            const link = document.createElement("a");
+            link.className = "hospital-map-link";
+            link.href = buildGoogleMapsHospitalUrl(item[1]);
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.innerHTML = "<span>" + item[0] + "</span><span>↗</span>";
+            hospitalLinkList.appendChild(link);
+        });
+        hospitalResultTitle.textContent = "Hospitals near " + pincode + ", " + state;
+        hospitalResult.classList.add("show");
+    }
+
+    hospitalSearchButton.addEventListener("click", function () {
+        const state = hospitalState.value.trim();
+        const pincode = hospitalPincode.value.trim();
+        if (!state) {
+            hospitalState.focus();
+            hospitalState.setCustomValidity("Please enter your state.");
+            hospitalState.reportValidity();
+            hospitalState.setCustomValidity("");
+            return;
+        }
+        if (!/^\d{6}$/.test(pincode)) {
+            hospitalPincode.focus();
+            hospitalPincode.setCustomValidity("Please enter a valid 6-digit PIN code.");
+            hospitalPincode.reportValidity();
+            hospitalPincode.setCustomValidity("");
+            return;
+        }
+        renderHospitalLinks(state, pincode);
+    });
+
+    hospitalPincode.addEventListener("input", function () {
+        hospitalPincode.value = hospitalPincode.value.replace(/\D/g, "").slice(0, 6);
     });
 
     // ============================================================
