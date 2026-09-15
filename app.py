@@ -3247,7 +3247,7 @@ HTML = r"""
             width: min(680px, calc(100% - 20px));
             z-index: 1000;
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 6px;
             padding: 7px;
             background: rgba(255,255,255,0.97);
@@ -3327,6 +3327,32 @@ HTML = r"""
         .hospital-map-link { display:flex; align-items:center; justify-content:space-between; gap:12px; text-decoration:none; color:#1769aa; background:#f4f9fd; border:1px solid #d8e8f3; border-radius:13px; padding:14px 15px; font-weight:800; }
         .hospital-map-link:hover { background:#eaf4fb; transform:translateY(-1px); }
         .hospital-map-link span:last-child { font-size:18px; }
+
+        /* ============================================================
+           NEARBY MEDICAL SHOPS
+           ============================================================ */
+        .medishop-panel { display:none; animation:navPanelIn .35s ease both; }
+        body.medishop-mode .medishop-panel { display:block; }
+        body.medishop-mode .main-content-for-nav,
+        body.medishop-mode .diet-panel,
+        body.medishop-mode .hospital-panel { display:none; }
+        .medishop-card { background:linear-gradient(135deg,#fffaf2,#fff5df); border:1px solid #f1dfba; border-radius:24px; padding:24px 20px; box-shadow:0 8px 24px rgba(120,80,20,.07); margin-top:18px; }
+        .medishop-heading { text-align:center; color:#a96800; font-size:clamp(24px,5vw,34px); margin:4px 0 8px; }
+        .medishop-subheading { text-align:center; color:#687873; margin:0 0 22px; font-size:15px; }
+        .medishop-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .medishop-field label { display:block; font-weight:700; color:#60491f; margin:0 0 7px; }
+        .medishop-field input { width:100%; border:1px solid #e8d5aa; border-radius:14px; padding:14px 13px; font-size:16px; background:white; color:#20312c; outline:none; }
+        .medishop-field input:focus { border-color:#d99a27; box-shadow:0 0 0 3px rgba(217,154,39,.12); }
+        .medishop-search-button { width:100%; margin-top:18px; border:0; border-radius:15px; min-height:52px; background:#b8750a; color:white; font-size:17px; font-weight:800; cursor:pointer; }
+        .medishop-search-button:active { transform:scale(.98); }
+        .medishop-result { display:none; margin-top:20px; background:white; border:1px solid #eadfc8; border-radius:18px; padding:18px; }
+        .medishop-result.show { display:block; animation:navPanelIn .35s ease both; }
+        .medishop-result-title { margin:0 0 6px; color:#a96800; font-size:20px; }
+        .medishop-result-note { margin:0 0 14px; color:#61736e; font-size:13px; line-height:1.45; }
+        .medishop-link-list { display:grid; gap:10px; }
+        .medishop-map-link { display:flex; align-items:center; justify-content:space-between; gap:12px; text-decoration:none; color:#8b5b00; background:#fffaf0; border:1px solid #eadbbd; border-radius:13px; padding:14px 15px; font-weight:800; }
+        .medishop-map-link:hover { background:#fff3d8; transform:translateY(-1px); }
+        .medishop-map-link span:last-child { font-size:18px; }
 
         .diet-panel {
             display: none;
@@ -3562,6 +3588,8 @@ HTML = r"""
             .diet-card { padding: 20px 15px; }
             .hospital-form-grid { grid-template-columns: 1fr; }
             .hospital-card { padding: 20px 15px; }
+            .medishop-form-grid { grid-template-columns: 1fr; }
+            .medishop-card { padding: 20px 15px; }
             .app-nav-button .nav-label { font-size: 11px; }
             .app-nav-button .nav-icon { font-size: 23px; }
         }
@@ -4463,6 +4491,27 @@ HTML = r"""
     </div>
 </div>
 
+<!-- ============================================================
+     NEARBY MEDICAL SHOPS SECTION
+============================================================ -->
+<div class="medishop-panel" id="medishopPanel">
+    <div class="medishop-card">
+        <div style="text-align:center;font-size:42px;line-height:1;">🏪</div>
+        <h2 class="medishop-heading">Nearby Medical Shops</h2>
+        <p class="medishop-subheading">Enter your state and PIN code to find nearby medical shops in Google Maps.</p>
+        <div class="medishop-form-grid">
+            <div class="medishop-field"><label for="medishopState">State</label><input id="medishopState" type="text" maxlength="60" placeholder="Enter your state"></div>
+            <div class="medishop-field"><label for="medishopPincode">PIN code</label><input id="medishopPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter PIN code"></div>
+        </div>
+        <button type="button" class="medishop-search-button" id="medishopSearchButton">🔎 Search Nearby Medical Shops</button>
+        <div class="medishop-result" id="medishopResult">
+            <h3 class="medishop-result-title" id="medishopResultTitle">Medical shops near your area</h3>
+            <p class="medishop-result-note">Tap any option below to open Google Maps. Google Maps will show available medical shops and pharmacies around the entered PIN code and state.</p>
+            <div class="medishop-link-list" id="medishopLinkList"></div>
+        </div>
+    </div>
+</div>
+
 </main>
 
 
@@ -4559,6 +4608,10 @@ HTML = r"""
     <button type="button" class="app-nav-button" id="navHospitals" data-section="hospitals">
         <span class="nav-icon">🏥</span>
         <span class="nav-label">Hospitals</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navMediShop" data-section="medishop">
+        <span class="nav-icon">🏪</span>
+        <span class="nav-label">Medi Shop</span>
     </button>
 </nav>
 
@@ -5727,11 +5780,12 @@ HTML = r"""
     const navStepCounter = document.getElementById("navStepCounter");
     const navDiet = document.getElementById("navDiet");
     const navHospitals = document.getElementById("navHospitals");
+    const navMediShop = document.getElementById("navMediShop");
     const dietPanel = document.getElementById("dietPanel");
     const mainContentForNav = document.getElementById("mainContentForNav");
 
     function setActiveNav(button) {
-        [navBuyMedi, navStepCounter, navDiet].forEach(function (item) {
+        [navBuyMedi, navStepCounter, navDiet, navHospitals, navMediShop].forEach(function (item) {
             item.classList.toggle("active", item === button);
         });
     }
@@ -5741,7 +5795,7 @@ HTML = r"""
     }
 
     navBuyMedi.addEventListener("click", function () {
-        document.body.classList.remove("step-mode", "diet-mode", "hospital-mode");
+        document.body.classList.remove("step-mode", "diet-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("buy-mode");
         mainContentForNav.classList.remove("buy-mode");
         void mainContentForNav.offsetWidth;
@@ -5751,23 +5805,30 @@ HTML = r"""
     });
 
     navStepCounter.addEventListener("click", function () {
-        document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode");
+        document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("step-mode");
         setActiveNav(navStepCounter);
         scrollToTopOfContent();
     });
 
     navDiet.addEventListener("click", function () {
-        document.body.classList.remove("buy-mode", "step-mode", "hospital-mode");
+        document.body.classList.remove("buy-mode", "step-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("diet-mode");
         setActiveNav(navDiet);
         scrollToTopOfContent();
     });
 
     navHospitals.addEventListener("click", function () {
-        document.body.classList.remove("buy-mode", "step-mode", "diet-mode");
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "medishop-mode");
         document.body.classList.add("hospital-mode");
         setActiveNav(navHospitals);
+        scrollToTopOfContent();
+    });
+
+    navMediShop.addEventListener("click", function () {
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode");
+        document.body.classList.add("medishop-mode");
+        setActiveNav(navMediShop);
         scrollToTopOfContent();
     });
 
@@ -5831,6 +5892,65 @@ HTML = r"""
 
     hospitalPincode.addEventListener("input", function () {
         hospitalPincode.value = hospitalPincode.value.replace(/\D/g, "").slice(0, 6);
+    });
+
+    // ============================================================
+    // NEARBY MEDICAL SHOPS
+    // State + PIN code -> Google Maps medical-shop searches.
+    // No extra Maps API key is required; Google Maps handles the results.
+    // ============================================================
+    const medishopState = document.getElementById("medishopState");
+    const medishopPincode = document.getElementById("medishopPincode");
+    const medishopSearchButton = document.getElementById("medishopSearchButton");
+    const medishopResult = document.getElementById("medishopResult");
+    const medishopResultTitle = document.getElementById("medishopResultTitle");
+    const medishopLinkList = document.getElementById("medishopLinkList");
+
+    function renderMediShopLinks(state, pincode) {
+        const area = pincode + ", " + state + ", India";
+        const searches = [
+            ["🏪 All Medical Shops", "medical shops near " + area],
+            ["💊 Pharmacies", "pharmacies near " + area],
+            ["🏬 Medical Stores", "medical stores near " + area],
+            ["🌙 24 Hour Medical Shops", "24 hour medical shops near " + area],
+            ["🩺 Chemists", "chemist shops near " + area]
+        ];
+        medishopLinkList.innerHTML = "";
+        searches.forEach(function (item) {
+            const link = document.createElement("a");
+            link.className = "medishop-map-link";
+            link.href = buildGoogleMapsHospitalUrl(item[1]);
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.innerHTML = "<span>" + item[0] + "</span><span>↗</span>";
+            medishopLinkList.appendChild(link);
+        });
+        medishopResultTitle.textContent = "Medical shops near " + pincode + ", " + state;
+        medishopResult.classList.add("show");
+    }
+
+    medishopSearchButton.addEventListener("click", function () {
+        const state = medishopState.value.trim();
+        const pincode = medishopPincode.value.trim();
+        if (!state) {
+            medishopState.focus();
+            medishopState.setCustomValidity("Please enter your state.");
+            medishopState.reportValidity();
+            medishopState.setCustomValidity("");
+            return;
+        }
+        if (!/^\d{6}$/.test(pincode)) {
+            medishopPincode.focus();
+            medishopPincode.setCustomValidity("Please enter a valid 6-digit PIN code.");
+            medishopPincode.reportValidity();
+            medishopPincode.setCustomValidity("");
+            return;
+        }
+        renderMediShopLinks(state, pincode);
+    });
+
+    medishopPincode.addEventListener("input", function () {
+        medishopPincode.value = medishopPincode.value.replace(/\D/g, "").slice(0, 6);
     });
 
     // ============================================================
