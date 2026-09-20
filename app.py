@@ -1594,6 +1594,7 @@ HTML = r"""
         .header-content {
             position: relative;
             z-index: 2;
+            padding: 0 54px;
         }
 
         .logo {
@@ -3674,6 +3675,345 @@ HTML = r"""
             cursor: pointer;
         }
 
+
+
+        /* ============================================================
+           MEDICAL HELP / THREE-DASH MENU
+        ============================================================ */
+        .menu-button {
+            position: absolute;
+            left: 16px;
+            top: 16px;
+            width: 48px;
+            height: 48px;
+            border: 1px solid rgba(255,255,255,.22);
+            border-radius: 15px;
+            background: rgba(0,0,0,.12);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            cursor: pointer;
+            z-index: 5;
+            -webkit-tap-highlight-color: transparent;
+            transition: transform .2s ease, background .2s ease;
+        }
+
+        .menu-button:hover {
+            background: rgba(0,0,0,.20);
+            transform: translateY(-1px);
+        }
+
+        .menu-button:active {
+            transform: scale(.95);
+        }
+
+        .menu-button span {
+            display: block;
+            width: 22px;
+            height: 2.5px;
+            border-radius: 99px;
+            background: #fff;
+        }
+
+        .medical-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 25, 20, .48);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            z-index: 2000;
+            transition: opacity .25s ease, visibility .25s ease;
+        }
+
+        .medical-menu-drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: min(410px, 88vw);
+            height: 100dvh;
+            background: #fff;
+            z-index: 2001;
+            transform: translateX(-102%);
+            transition: transform .30s cubic-bezier(.22,.8,.24,1);
+            box-shadow: 10px 0 35px rgba(0,0,0,.18);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 18px;
+        }
+
+        body.medical-menu-open {
+            overflow: hidden;
+        }
+
+        body.medical-menu-open .medical-menu-overlay {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        body.medical-menu-open .medical-menu-drawer {
+            transform: translateX(0);
+        }
+
+        .medical-menu-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 22px 18px 18px;
+            background: linear-gradient(135deg, #087f5b, #0ca678);
+            color: #fff;
+        }
+
+        .medical-menu-title {
+            font-size: 22px;
+            font-weight: 900;
+        }
+
+        .medical-menu-subtitle {
+            margin-top: 3px;
+            font-size: 12px;
+            opacity: .9;
+        }
+
+        .medical-menu-close {
+            width: 42px;
+            height: 42px;
+            border: 0;
+            border-radius: 13px;
+            background: rgba(255,255,255,.14);
+            color: #fff;
+            font-size: 28px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .medical-menu-list {
+            padding: 12px;
+        }
+
+        .medical-menu-item {
+            width: 100%;
+            min-height: 68px;
+            border: 1px solid #e1ebe7;
+            border-radius: 15px;
+            background: #fff;
+            color: #17352c;
+            padding: 13px 14px;
+            margin-bottom: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            text-align: left;
+            cursor: pointer;
+            font: inherit;
+            transition: background .18s ease, border-color .18s ease, transform .18s ease;
+        }
+
+        .medical-menu-item:hover,
+        .medical-menu-item.open {
+            background: #eefaf6;
+            border-color: #bfe5d8;
+        }
+
+        .medical-menu-item:active {
+            transform: scale(.99);
+        }
+
+        .medical-menu-item strong {
+            display: block;
+            font-size: 15px;
+        }
+
+        .medical-menu-item small {
+            display: block;
+            margin-top: 4px;
+            color: #71807b;
+            font-size: 11px;
+            line-height: 1.35;
+            font-weight: 600;
+        }
+
+        .menu-chevron {
+            font-size: 27px;
+            color: #0b8060;
+            transition: transform .2s ease;
+        }
+
+        .medical-menu-item.open .menu-chevron {
+            transform: rotate(90deg);
+        }
+
+        .medical-menu-panel {
+            display: none;
+            margin: -2px 0 11px;
+            padding: 2px 2px 4px;
+            animation: navPanelIn .25s ease both;
+        }
+
+        .medical-menu-panel.show {
+            display: block;
+        }
+
+        .medical-number-card,
+        .medical-resource-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            text-decoration: none;
+            color: #16362d;
+            background: #f7fbf9;
+            border: 1px solid #dcebe5;
+            border-radius: 13px;
+            padding: 12px 13px;
+            margin: 7px 0;
+        }
+
+        .medical-number-card strong {
+            display: block;
+            color: #087f5b;
+            font-size: 18px;
+        }
+
+        .medical-number-card small,
+        .medical-resource-card small {
+            display: block;
+            margin-top: 3px;
+            color: #6b7b75;
+            font-size: 11px;
+            line-height: 1.35;
+            font-weight: 600;
+        }
+
+        .emergency-card {
+            background: #fff6f4;
+            border-color: #f2d0ca;
+        }
+
+        .emergency-card strong {
+            color: #c0392b;
+        }
+
+        .call-badge {
+            flex: 0 0 auto;
+            border-radius: 999px;
+            background: #087f5b;
+            color: #fff;
+            padding: 7px 11px;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .medical-menu-note {
+            margin: 8px 2px 10px;
+            padding: 9px 10px;
+            border-radius: 10px;
+            background: #fffbea;
+            border: 1px solid #f0e0a5;
+            color: #6c5b1c;
+            font-size: 10.5px;
+            line-height: 1.45;
+        }
+
+        .pincode-finder {
+            background: #f5fbf8;
+            border: 1px solid #d8ebe3;
+            border-radius: 15px;
+            padding: 13px;
+        }
+
+        .pincode-finder-title {
+            color: #087f5b;
+            font-weight: 900;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .pincode-grid {
+            display: grid;
+            grid-template-columns: 1.1fr .9fr;
+            gap: 8px;
+        }
+
+        .pincode-grid input {
+            width: 100%;
+            border: 1px solid #cfe3da;
+            border-radius: 11px;
+            padding: 11px;
+            background: #fff;
+            font: inherit;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .pincode-grid input:focus {
+            border-color: #0ca678;
+            box-shadow: 0 0 0 3px rgba(12,166,120,.10);
+        }
+
+        .pincode-search-button {
+            width: 100%;
+            margin-top: 9px;
+            min-height: 42px;
+            border: 0;
+            border-radius: 11px;
+            background: #087f5b;
+            color: #fff;
+            font: inherit;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .pincode-links {
+            display: grid;
+            gap: 7px;
+            margin-top: 9px;
+        }
+
+        .pincode-links a {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 11px;
+            border-radius: 10px;
+            background: #fff;
+            border: 1px solid #dcebe5;
+            color: #087f5b;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .medical-menu-footer {
+            margin: 4px 14px 0;
+            padding: 11px 12px;
+            border-top: 1px solid #e5eeea;
+            color: #788781;
+            font-size: 10px;
+            line-height: 1.5;
+            display: grid;
+            gap: 3px;
+        }
+
+        @media (max-width: 600px) {
+            .menu-button {
+                left: 11px;
+                top: 11px;
+                width: 44px;
+                height: 44px;
+            }
+
+            .medical-menu-drawer {
+                width: min(390px, 92vw);
+            }
+        }
+
     </style>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -3687,6 +4027,11 @@ HTML = r"""
     <span class="floating-pill pill-three">💊</span>
 
     <div class="header-content">
+
+        <button type="button" class="menu-button" id="medicalMenuButton"
+                aria-label="Open medical help menu" aria-expanded="false">
+            <span></span><span></span><span></span>
+        </button>
 
         <div class="logo">💊</div>
 
@@ -3704,7 +4049,117 @@ HTML = r"""
 
 </header>
 
-<main class="container">
+<!-- ============================================================
+     MEDICAL HELP / EMERGENCY MENU
+     Three-dash menu requested in the website update sketch.
+============================================================ -->
+<div class="medical-menu-overlay" id="medicalMenuOverlay"></div>
+
+<aside class="medical-menu-drawer" id="medicalMenuDrawer"
+       aria-hidden="true" aria-label="Medical help and emergency menu">
+
+    <div class="medical-menu-head">
+        <div>
+            <div class="medical-menu-title">🩺 Medical Help</div>
+            <div class="medical-menu-subtitle">Important numbers & nearby care</div>
+        </div>
+        <button type="button" class="medical-menu-close" id="medicalMenuClose"
+                aria-label="Close medical help menu">×</button>
+    </div>
+
+    <div class="medical-menu-list">
+
+        <button type="button" class="medical-menu-item" data-menu-panel="emergency">
+            <span><strong>🚨 Emergency Numbers</strong><small>Emergency medical, police & fire</small></span>
+            <span class="menu-chevron">›</span>
+        </button>
+
+        <div class="medical-menu-panel" id="menuPanelEmergency">
+            <a class="medical-number-card emergency-card" href="tel:112">
+                <span><strong>112</strong><small>Pan-India emergency response — medical, police & fire</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <a class="medical-number-card" href="tel:108">
+                <span><strong>108</strong><small>Emergency ambulance service where available</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <div class="medical-menu-note">For an immediate emergency, 112 is the pan-India emergency number. Use emergency services only when genuinely needed.</div>
+        </div>
+
+        <button type="button" class="medical-menu-item" data-menu-panel="help">
+            <span><strong>☎️ Help Line Numbers</strong><small>Health & medicine-related support</small></span>
+            <span class="menu-chevron">›</span>
+        </button>
+
+        <div class="medical-menu-panel" id="menuPanelHelp">
+            <a class="medical-number-card" href="tel:104">
+                <span><strong>104</strong><small>State health helpline where operational</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <a class="medical-number-card" href="tel:1800116117">
+                <span><strong>1800-116-117</strong><small>National Poisons Information Centre (AIIMS)</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <a class="medical-number-card" href="tel:18001803024">
+                <span><strong>1800-180-3024</strong><small>Pharmacovigilance India helpline</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <div class="medical-menu-note">Health-helpline availability can differ by state/program. Verify the service shown before relying on a state-specific number.</div>
+        </div>
+
+        <button type="button" class="medical-menu-item" data-menu-panel="ambulance">
+            <span><strong>🚑 Ambulance Numbers</strong><small>Emergency & patient transport</small></span>
+            <span class="menu-chevron">›</span>
+        </button>
+
+        <div class="medical-menu-panel" id="menuPanelAmbulance">
+            <a class="medical-number-card emergency-card" href="tel:112">
+                <span><strong>112</strong><small>Pan-India emergency response; includes medical emergency support</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <a class="medical-number-card" href="tel:108">
+                <span><strong>108</strong><small>Emergency ambulance service in participating states/UTs</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <a class="medical-number-card" href="tel:102">
+                <span><strong>102</strong><small>Patient transport / maternal & child transport in participating states/UTs</small></span>
+                <span class="call-badge">Call</span>
+            </a>
+            <div class="medical-menu-note">Ambulance arrangements vary by state/UT. If there is an urgent life-threatening emergency, use 112.</div>
+        </div>
+
+        <button type="button" class="medical-menu-item" data-menu-panel="hospital">
+            <span><strong>🏥 Hospital Numbers</strong><small>Find hospitals and verified government resources</small></span>
+            <span class="menu-chevron">›</span>
+        </button>
+
+        <div class="medical-menu-panel" id="menuPanelHospital">
+            <div class="pincode-finder">
+                <div class="pincode-finder-title">📍 Find nearby hospitals by PIN code</div>
+                <div class="pincode-grid">
+                    <input id="menuPincodeState" type="text" maxlength="60" placeholder="State">
+                    <input id="menuPincode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit PIN">
+                </div>
+                <button type="button" class="pincode-search-button" id="menuPincodeSearch">🔎 Search by PIN code</button>
+                <div class="pincode-links" id="menuPincodeLinks"></div>
+            </div>
+
+            <a class="medical-resource-card" href="https://ors.gov.in/" target="_blank" rel="noopener noreferrer">
+                <span><strong>🏛️ Government hospital portal</strong><small>ORS — Online Registration System for participating government hospitals</small></span>
+                <span>↗</span>
+            </a>
+
+            <div class="medical-menu-note">Hospital phone numbers are facility-specific and can change. For the most reliable current number, open the hospital result and verify the listing before calling.</div>
+        </div>
+
+    </div>
+
+    <div class="medical-menu-footer">
+        <span>⚠️ Emergency numbers are provided for quick access.</span>
+        <span>Always verify non-emergency contact details.</span>
+    </div>
+</aside>
+\n<main class="container">
 
 <div class="main-content-for-nav buy-mode" id="mainContentForNav">
 
@@ -5774,6 +6229,117 @@ HTML = r"""
     }, 4500);
 
     // ============================================================
+    // THREE-DASH MEDICAL HELP MENU
+    // ============================================================
+    const medicalMenuButton = document.getElementById("medicalMenuButton");
+    const medicalMenuDrawer = document.getElementById("medicalMenuDrawer");
+    const medicalMenuOverlay = document.getElementById("medicalMenuOverlay");
+    const medicalMenuClose = document.getElementById("medicalMenuClose");
+
+    function closeMedicalMenu() {
+        document.body.classList.remove("medical-menu-open");
+        medicalMenuButton.setAttribute("aria-expanded", "false");
+        medicalMenuDrawer.setAttribute("aria-hidden", "true");
+    }
+
+    function openMedicalMenu() {
+        document.body.classList.add("medical-menu-open");
+        medicalMenuButton.setAttribute("aria-expanded", "true");
+        medicalMenuDrawer.setAttribute("aria-hidden", "false");
+    }
+
+    medicalMenuButton.addEventListener("click", function () {
+        if (document.body.classList.contains("medical-menu-open")) {
+            closeMedicalMenu();
+        } else {
+            openMedicalMenu();
+        }
+    });
+
+    medicalMenuClose.addEventListener("click", closeMedicalMenu);
+    medicalMenuOverlay.addEventListener("click", closeMedicalMenu);
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            closeMedicalMenu();
+        }
+    });
+
+    document.querySelectorAll(".medical-menu-item").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const panelId = "menuPanel" +
+                button.dataset.menuPanel.charAt(0).toUpperCase() +
+                button.dataset.menuPanel.slice(1);
+
+            const panel = document.getElementById(panelId);
+            const alreadyOpen = panel.classList.contains("show");
+
+            document.querySelectorAll(".medical-menu-panel").forEach(function (item) {
+                item.classList.remove("show");
+            });
+            document.querySelectorAll(".medical-menu-item").forEach(function (item) {
+                item.classList.remove("open");
+            });
+
+            if (!alreadyOpen) {
+                panel.classList.add("show");
+                button.classList.add("open");
+            }
+        });
+    });
+
+    // PIN-code search inside the medical menu.
+    // It creates direct Google Maps searches without requiring a Maps API key.
+    const menuPincodeState = document.getElementById("menuPincodeState");
+    const menuPincode = document.getElementById("menuPincode");
+    const menuPincodeSearch = document.getElementById("menuPincodeSearch");
+    const menuPincodeLinks = document.getElementById("menuPincodeLinks");
+
+    menuPincode.addEventListener("input", function () {
+        menuPincode.value = menuPincode.value.replace(/\D/g, "").slice(0, 6);
+    });
+
+    menuPincodeSearch.addEventListener("click", function () {
+        const state = menuPincodeState.value.trim();
+        const pincode = menuPincode.value.trim();
+
+        if (!state) {
+            menuPincodeState.focus();
+            menuPincodeState.setCustomValidity("Please enter your state.");
+            menuPincodeState.reportValidity();
+            menuPincodeState.setCustomValidity("");
+            return;
+        }
+
+        if (!/^\d{6}$/.test(pincode)) {
+            menuPincode.focus();
+            menuPincode.setCustomValidity("Please enter a valid 6-digit PIN code.");
+            menuPincode.reportValidity();
+            menuPincode.setCustomValidity("");
+            return;
+        }
+
+        const area = pincode + ", " + state + ", India";
+        const searches = [
+            ["🏥 Hospitals near this PIN", "hospitals near " + area],
+            ["🚑 Emergency hospitals near this PIN", "emergency hospitals near " + area],
+            ["🏪 Medical shops near this PIN", "medical shops near " + area],
+            ["💊 Pharmacies near this PIN", "pharmacies near " + area]
+        ];
+
+        menuPincodeLinks.innerHTML = "";
+
+        searches.forEach(function (item) {
+            const link = document.createElement("a");
+            link.href = buildGoogleMapsHospitalUrl(item[1]);
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.innerHTML = "<span>" + item[0] + "</span><span>↗</span>";
+            menuPincodeLinks.appendChild(link);
+        });
+    });
+
+    // ============================================================
     // BOTTOM NAVIGATION
     // ============================================================
     const navBuyMedi = document.getElementById("navBuyMedi");
@@ -5795,6 +6361,7 @@ HTML = r"""
     }
 
     navBuyMedi.addEventListener("click", function () {
+        closeMedicalMenu();
         document.body.classList.remove("step-mode", "diet-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("buy-mode");
         mainContentForNav.classList.remove("buy-mode");
@@ -5805,6 +6372,7 @@ HTML = r"""
     });
 
     navStepCounter.addEventListener("click", function () {
+        closeMedicalMenu();
         document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("step-mode");
         setActiveNav(navStepCounter);
@@ -5812,6 +6380,7 @@ HTML = r"""
     });
 
     navDiet.addEventListener("click", function () {
+        closeMedicalMenu();
         document.body.classList.remove("buy-mode", "step-mode", "hospital-mode", "medishop-mode");
         document.body.classList.add("diet-mode");
         setActiveNav(navDiet);
@@ -5819,6 +6388,7 @@ HTML = r"""
     });
 
     navHospitals.addEventListener("click", function () {
+        closeMedicalMenu();
         document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "medishop-mode");
         document.body.classList.add("hospital-mode");
         setActiveNav(navHospitals);
@@ -5826,6 +6396,7 @@ HTML = r"""
     });
 
     navMediShop.addEventListener("click", function () {
+        closeMedicalMenu();
         document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode");
         document.body.classList.add("medishop-mode");
         setActiveNav(navMediShop);
