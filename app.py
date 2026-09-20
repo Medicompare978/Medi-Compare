@@ -980,7 +980,7 @@ def provider_worker(pharmacy):
                 job.result = {
                     "ok": False,
                     "status_code": 429,
-                    "error": f"MediCompare provider call safety limit reached ({count})",
+                    "error": f"CompareMeds provider call safety limit reached ({count})",
                 }
                 continue
 
@@ -1009,7 +1009,7 @@ def provider_worker(pharmacy):
                 job.result = {
                     "ok": False,
                     "status_code": 429,
-                    "error": f"MediCompare provider call safety limit reached ({count})",
+                    "error": f"CompareMeds provider call safety limit reached ({count})",
                 }
                 continue
 
@@ -1544,7 +1544,7 @@ HTML = r"""
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>MediCompare</title>
+    <title>CompareMeds</title>
 
     <style>
         * {
@@ -3234,7 +3234,7 @@ HTML = r"""
 
         /* ============================================================
            BOTTOM APP NAVIGATION + SECTION MODES
-           Keeps the existing MediCompare visual design intact.
+           Keeps the existing CompareMeds visual design intact.
         ============================================================ */
         body {
             padding-bottom: 92px;
@@ -4106,7 +4106,7 @@ HTML = r"""
 
         <div class="logo">💊</div>
 
-        <h1>MediCompare</h1>
+        <h1>CompareMeds</h1>
 
         <div class="tagline">
             Compare. Save. Choose Better.
@@ -4310,7 +4310,7 @@ HTML = r"""
 
     ⚠️ <strong>Important:</strong>
 
-    MediCompare is a price/catalogue comparison tool,
+    CompareMeds is a price/catalogue comparison tool,
     not medical advice.
 
     Check the exact medicine name, strength,
@@ -4340,7 +4340,7 @@ HTML = r"""
             </div>
 
             <div class="step-status" id="stepStatus">
-                Use the HTTPS MediCompare site on your phone to enable motion counting.
+                Use the HTTPS CompareMeds site on your phone to enable motion counting.
             </div>
         </div>
 
@@ -4935,7 +4935,7 @@ HTML = r"""
 
     Prices and availability can change.
 
-    MediCompare may use saved search results to reduce
+    CompareMeds may use saved search results to reduce
     repeated pharmacy catalogue requests.
 
     Always verify the final price, stock status,
@@ -5119,7 +5119,7 @@ HTML = r"""
 <!-- ============================================================
      BOTTOM NAVIGATION
 ============================================================ -->
-<nav class="app-bottom-nav" aria-label="MediCompare sections">
+<nav class="app-bottom-nav" aria-label="CompareMeds sections">
     <button type="button" class="app-nav-button active" id="navBuyMedi" data-section="buy">
         <span class="nav-icon">💊</span>
         <span class="nav-label">BuyMedi</span>
@@ -5272,7 +5272,7 @@ HTML = r"""
 
         if (!window.isSecureContext) {
             showCameraError(
-                "Camera access needs HTTPS. Open the HTTPS MediCompare website on your phone."
+                "Camera access needs HTTPS. Open the HTTPS CompareMeds website on your phone."
             );
             cameraModal.classList.add("show");
             cameraModal.setAttribute("aria-hidden", "false");
@@ -6179,7 +6179,7 @@ HTML = r"""
         try {
             if (!window.isSecureContext) {
                 stepStatus.textContent =
-                    "Motion counting needs HTTPS. Open MediCompare using its HTTPS address (or localhost).";
+                    "Motion counting needs HTTPS. Open CompareMeds using its HTTPS address (or localhost).";
                 return;
             }
 
@@ -6221,7 +6221,7 @@ HTML = r"""
         } catch (error) {
             console.error("Step counter permission/error:", error);
             stepStatus.textContent =
-                "Motion access could not be started. Please use the HTTPS MediCompare site.";
+                "Motion access could not be started. Please use the HTTPS CompareMeds site.";
         }
     }
 
@@ -6671,7 +6671,7 @@ HTML = r"""
         dietResult.classList.add("show");
 
         lastDietText =
-            "MediCompare — General Healthy Diet Guide\n\n" +
+            "CompareMeds — General Healthy Diet Guide\n\n" +
             "Age: " + age + "\n" +
             "Body weight: " + weight + " kg\n" +
             "Activity: " + guide.label + "\n\n" +
@@ -6770,7 +6770,7 @@ def download_diet_pdf():
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4, rightMargin=40, leftMargin=40,
-        topMargin=42, bottomMargin=42, title="MediCompare Healthy Diet Guide"
+        topMargin=42, bottomMargin=42, title="CompareMeds Healthy Diet Guide"
     )
     styles = getSampleStyleSheet()
     title = ParagraphStyle("DietTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=20, spaceAfter=6)
@@ -6780,7 +6780,7 @@ def download_diet_pdf():
     note = ParagraphStyle("DietNote", parent=styles["BodyText"], fontSize=8.5, leading=12, spaceBefore=12)
 
     story = [
-        Paragraph("MediCompare", title),
+        Paragraph("CompareMeds", title),
         Paragraph("Healthy Diet Guide", heading),
         Paragraph("General healthy eating guide generated from your entered details.", subtitle),
         Paragraph("Your Profile", heading),
@@ -6820,7 +6820,7 @@ def download_diet_pdf():
 
     doc.build(story)
     buffer.seek(0)
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name="MediCompare_Diet_Chart.pdf")
+    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name="CompareMeds_Diet_Chart.pdf")
 
 
 # ============================================================
@@ -6964,7 +6964,7 @@ def image_proxy():
         response = requests.get(
             image_url,
             headers={
-                "User-Agent": "Mozilla/5.0 MediCompare/1.0",
+                "User-Agent": "Mozilla/5.0 CompareMeds/1.0",
                 "Referer": "https://pharmeasy.in/" if host.endswith("pharmeasy.in") else "https://www.medplusmart.com/",
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             },
@@ -7126,7 +7126,7 @@ def home():
 if __name__ == "__main__":
 
     print()
-    print("MediCompare is starting...")
+    print("CompareMeds is starting...")
     print("Laptop: http://127.0.0.1:5000")
     print("LAN:    http://10.27.159.184:5000")
     print("Database:", os.path.abspath(DB_PATH))
