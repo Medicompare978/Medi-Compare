@@ -4019,6 +4019,72 @@ HTML = r"""
             }
         }
 
+    
+        /* MOBILE LAYOUT HARDENING */
+        html, body {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
+        img, video, canvas, iframe {
+            max-width: 100%;
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                width: 100%;
+                max-width: 100%;
+                overflow: hidden;
+            }
+
+            .header-content {
+                width: 100%;
+                max-width: 100%;
+                padding-left: 46px;
+                padding-right: 46px;
+            }
+
+            .container {
+                width: calc(100% - 18px);
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            .main-content-for-nav,
+            .search-form,
+            .search-status,
+            .search-scan,
+            .search-tip,
+            .warning,
+            .error,
+            .search-title,
+            .pharmacy-section,
+            .empty,
+            .footer-note {
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            .search-form {
+                width: 100%;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .search-wrapper,
+            .search-form input {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            .search-form button[type="submit"] {
+                width: 100%;
+                max-width: 100%;
+            }
+        }
+
     </style>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -4164,7 +4230,8 @@ HTML = r"""
         <span>Always verify non-emergency contact details.</span>
     </div>
 </aside>
-\n<main class="container">
+
+<main class="container">
 
 <div class="main-content-for-nav buy-mode" id="mainContentForNav">
 
@@ -6620,6 +6687,39 @@ HTML = r"""
     // Download button gets a real server-generated PDF file.
     dietDownload.addEventListener("click", downloadDietChartAsPDF);
 
+</script>
+
+
+<script>
+(function removeStrayLiteralNewlineText() {
+    // Some template/browser paths can expose a literal "\\n" text node.
+    // Remove only standalone literal newline markers; normal whitespace/newlines remain untouched.
+    function cleanStrayNewlineNodes() {
+        var walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            null
+        );
+        var nodes = [];
+        var node;
+        while ((node = walker.nextNode())) {
+            if (/^(?:\s*\\n\s*)+$/.test(node.nodeValue || "")) {
+                nodes.push(node);
+            }
+        }
+        nodes.forEach(function (textNode) {
+            if (textNode.parentNode) {
+                textNode.parentNode.removeChild(textNode);
+            }
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", cleanStrayNewlineNodes, { once: true });
+    } else {
+        cleanStrayNewlineNodes();
+    }
+})();
 </script>
 
 </body>
