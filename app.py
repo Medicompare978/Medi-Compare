@@ -3682,13 +3682,15 @@ HTML = r"""
         ============================================================ */
         .menu-button {
             position: absolute;
-            left: 16px;
-            top: 16px;
-            width: 48px;
-            height: 48px;
-            border: 1px solid rgba(255,255,255,.22);
-            border-radius: 15px;
-            background: rgba(0,0,0,.12);
+            left: 7px;
+            top: 13px;
+            width: 46px;
+            height: 46px;
+            border: 1px solid rgba(190,255,236,.28);
+            border-radius: 14px;
+            background: rgba(4,91,70,.72);
+            box-shadow: 0 7px 18px rgba(0,55,42,.20),
+                        inset 0 1px 0 rgba(255,255,255,.10);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -3697,11 +3699,13 @@ HTML = r"""
             cursor: pointer;
             z-index: 5;
             -webkit-tap-highlight-color: transparent;
-            transition: transform .2s ease, background .2s ease;
+            transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
         }
 
         .menu-button:hover {
-            background: rgba(0,0,0,.20);
+            background: rgba(3,78,60,.88);
+            box-shadow: 0 9px 20px rgba(0,55,42,.26),
+                        inset 0 1px 0 rgba(255,255,255,.12);
             transform: translateY(-1px);
         }
 
@@ -3714,7 +3718,8 @@ HTML = r"""
             width: 22px;
             height: 2.5px;
             border-radius: 99px;
-            background: #fff;
+            background: #dffaf1;
+            box-shadow: 0 0 3px rgba(223,250,241,.18);
         }
 
         .medical-menu-overlay {
@@ -4003,8 +4008,8 @@ HTML = r"""
 
         @media (max-width: 600px) {
             .menu-button {
-                left: 11px;
-                top: 11px;
+                left: 5px;
+                top: 10px;
                 width: 44px;
                 height: 44px;
             }
