@@ -9,6 +9,7 @@ import time
 import hashlib
 import difflib
 import re
+import base64
 from urllib.parse import urlparse
 from io import BytesIO
 
