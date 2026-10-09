@@ -80,6 +80,8 @@ MEDPLUS_SCRAPER_ID = "8285ba5b-0a0a-4525-8706-4fed1d6fc5cc"
 PHARMEASY_SCRAPER_ID = "e7c250a1-5824-4027-9f84-c63d92aa5889"
 TATA1MG_SCRAPER_ID = "f703cd2f-7d9c-47bc-8106-6d9631d9b223"
 TATA1MG_LOCATION = os.getenv("MEDICOMPARE_TATA1MG_LOCATION", "Vijayawada")
+NETMEDS_SCRAPER_ID = "050b1fa4-1e5c-467c-9aa6-ed92127956b6"
+NETMEDS_LOCATION = os.getenv("MEDICOMPARE_NETMEDS_LOCATION", "Vijayawada")
 
 PARSE_BASE_URL = "https://api.parse.bot/scraper"
 
@@ -1454,6 +1456,96 @@ def normalize_tata1mg_products(products):
     return normalized
 
 
+def normalize_netmeds_products(products):
+    """Normalize Netmeds records into the shared product-card schema."""
+    normalized = []
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+
+        raw_url = extract_product_url(product)
+        raw_image = extract_image_url(product)
+
+        # Parse may return absolute URLs or relative paths. Only join relative
+        # paths to Netmeds; preserve provider-supplied absolute URLs.
+        if isinstance(raw_url, str) and raw_url.strip():
+            raw_url = urljoin("https://www.netmeds.com/", raw_url.strip())
+        if isinstance(raw_image, str) and raw_image.strip():
+            raw_image = urljoin("https://www.netmeds.com/", raw_image.strip())
+
+        price = first_value(
+            product, "price", "selling_price", "discounted_price",
+            "final_price", "special_price", "offer_price"
+        )
+        mrp = first_value(
+            product, "mrp", "MRP", "mrp_price",
+            "maximum_retail_price", "list_price"
+        )
+        discount = first_value(
+            product, "discount_percentage", "discount_percent",
+            "discount", "discount_str", "discountPercentage"
+        )
+        normalized.append({
+            "name": first_value(
+                product, "product_name", "name", "medicine_name",
+                "title", "display_name"
+            ) or "Unnamed medicine",
+            "manufacturer": first_value(
+                product, "manufacturer", "manufacturer_name", "brand", "manufacturerName"
+            ),
+            "pack_size": first_value(
+                product, "pack_size", "pack", "quantity", "unit_size",
+                "unitSize", "packaging"
+            ),
+            "composition": first_value(
+                product, "composition", "salt", "ingredients", "description"
+            ),
+            "price": to_float(price, 0),
+            "mrp": to_float(mrp),
+            "discount_percentage": discount,
+            "availability": first_value(
+                product, "availability", "is_available", "available",
+                "in_stock", "stock_status", "status"
+            ),
+            "is_prescription_required": parse_bool(first_value(
+                product, "is_prescription_required", "prescription_required",
+                "rx_required", "requires_prescription", "prescription"
+            )),
+            "product_url": raw_url,
+            "image_url": raw_image,
+        })
+    return normalized
+
+
+# ============================================================
+# NETMEDS SEARCH
+# ============================================================
+
+def search_netmeds(query):
+    url = f"{PARSE_BASE_URL}/{NETMEDS_SCRAPER_ID}/search_medicines"
+    headers = {"X-API-Key": API_KEY}
+    params = {"query": query, "location": NETMEDS_LOCATION}
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=45,
+        )
+        print("Netmeds HTTP status:", response.status_code)
+
+        if response.status_code == 200:
+            return response.json()
+
+        print("Netmeds error:", response.text[:500])
+        return {"error": response.text, "status_code": response.status_code}
+
+    except requests.RequestException as exc:
+        print("Netmeds exception:", exc)
+        return {"error": str(exc), "status_code": 0}
+
+
 # ============================================================
 # PHARMEASY NORMALIZATION
 # ============================================================
@@ -1610,6 +1702,29 @@ def fetch_tata1mg_products(query):
                     break
     print("Tata 1mg normalized source product count:", len(products))
     return {"ok": True, "products": normalize_tata1mg_products(products)}
+
+
+def fetch_netmeds_products(query):
+    result = search_netmeds(query)
+    if not isinstance(result, dict) or result.get("error") or result.get("status_code"):
+        return {
+            "ok": False,
+            "error": result.get("error", "Netmeds API failed") if isinstance(result, dict) else "Netmeds API failed",
+            "status_code": result.get("status_code", 0) if isinstance(result, dict) else 0,
+        }
+
+    products = get_products(result)
+    if not products:
+        data = result.get("data", result)
+        if isinstance(data, dict):
+            for key in ("items", "medicines", "products", "results"):
+                if isinstance(data.get(key), list):
+                    products = data[key]
+                    break
+
+    normalized = normalize_netmeds_products(products)
+    print("Netmeds normalized product count:", len(normalized))
+    return {"ok": True, "products": normalized}
 
 
 def format_cache_meta(fetched_at, source):
@@ -5208,6 +5323,71 @@ HTML = r"""
 </section>
 
 
+<!-- ========================================================
+     NETMEDS
+     ======================================================== -->
+<section class="pharmacy-section pharmacy-result-reveal">
+    <div class="pharmacy-header">
+        <h2>🟣 Netmeds</h2>
+        <div class="pharmacy-meta">
+            <span class="count">{{ netmeds_products|length }} result(s)</span>
+            {% if cache_meta.netmeds %}
+                <span class="cache-time">{{ cache_meta.netmeds.label }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if netmeds_products %}
+    <div class="products">
+        {% for product in netmeds_products %}
+        <article class="card">
+            {% if product.image_url %}
+            <div class="product-image-box">
+                <img src="{{ url_for('image_proxy') }}?url={{ product.image_url|urlencode }}"
+                     alt="{{ product.name }}" class="product-image" loading="lazy"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="image-unavailable" style="display:none;">Image unavailable</div>
+            </div>
+            {% endif %}
+            <div class="card-body">
+                <div class="product-name">{{ product.name or "Unnamed medicine" }}</div>
+                {% if product.manufacturer %}
+                <div class="manufacturer">Manufacturer: {{ product.manufacturer }}</div>
+                {% endif %}
+                <div class="meta">
+                    {% if product.pack_size %}📦 Pack: {{ product.pack_size }}<br>{% endif %}
+                    {% if product.composition %}🧪 {{ product.composition }}<br>{% endif %}
+                    {% if product.availability is not none %}Availability: {{ product.availability }}{% endif %}
+                </div>
+                <div class="price-row">
+                    {% if product.price is not none %}
+                    <span class="price">₹{{ "%.2f"|format(product.price|float) }}</span>
+                    {% endif %}
+                    {% if product.mrp and product.price and product.mrp|float > product.price|float %}
+                    <span class="mrp">MRP ₹{{ "%.2f"|format(product.mrp|float) }}</span>
+                    {% endif %}
+                    {% if product.discount_percentage %}
+                    <span class="discount">{{ product.discount_percentage }}% OFF</span>
+                    {% endif %}
+                </div>
+                {% if product.is_prescription_required %}
+                <span class="badge rx">Prescription required</span>
+                {% endif %}
+                {% if product.product_url %}
+                <a href="{{ product.product_url }}" target="_blank" rel="noopener noreferrer" class="buy-button">Buy on Netmeds ↗</a>
+                {% else %}
+                <a href="https://www.netmeds.com/" target="_blank" rel="noopener noreferrer" class="buy-button">Visit Netmeds ↗</a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">No Netmeds results found for this search.</div>
+    {% endif %}
+</section>
+
+
 {% else %}
 
 <div class="empty">
@@ -7277,6 +7457,8 @@ def image_proxy():
         or host == "1mg.com"
         or host.endswith(".1mg.com")
         or host == "onemg.gumlet.io"
+        or host == "netmeds.com"
+        or host.endswith(".netmeds.com")
     )
     if parsed.scheme not in {"http", "https"} or not allowed:
         return Response("Image host not allowed", status=403, mimetype="text/plain")
@@ -7288,7 +7470,13 @@ def image_proxy():
                 "User-Agent": "Mozilla/5.0 CompareMeds/1.0",
                 "Referer": (
                     "https://pharmeasy.in/" if host.endswith("pharmeasy.in")
-                    else ("https://www.1mg.com/" if host == "1mg.com" or host.endswith(".1mg.com") else "https://www.medplusmart.com/")
+                    else (
+                        "https://www.1mg.com/" if host == "1mg.com" or host.endswith(".1mg.com")
+                        else (
+                            "https://www.netmeds.com/" if host == "netmeds.com" or host.endswith(".netmeds.com")
+                            else "https://www.medplusmart.com/"
+                        )
+                    )
                 ),
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             },
@@ -7323,12 +7511,14 @@ def home():
     medplus_products = []
     pharmeasy_products = []
     tata1mg_products = []
+    netmeds_products = []
 
     cache_meta = {
         "apollo": None,
         "medplus": None,
         "pharmeasy": None,
         "tata1mg": None,
+        "netmeds": None,
     }
 
     error_message = ""
@@ -7407,16 +7597,31 @@ def home():
                 tata1mg_source,
             )
 
+            (
+                netmeds_products,
+                netmeds_checked_at,
+                netmeds_source,
+            ) = cached_search(
+                "netmeds",
+                searched_medicine,
+                fetch_netmeds_products,
+            )
+            cache_meta["netmeds"] = format_cache_meta(
+                netmeds_checked_at,
+                netmeds_source,
+            )
+
             if (
                 not apollo_products
                 and not medplus_products
                 and not pharmeasy_products
                 and not tata1mg_products
+                and not netmeds_products
             ):
                 blocked_providers = []
                 budget_providers = []
 
-                for pharmacy in ("apollo", "medplus", "pharmeasy", "tata1mg"):
+                for pharmacy in ("apollo", "medplus", "pharmeasy", "tata1mg", "netmeds"):
                     blocked, state = provider_is_blocked(pharmacy)
                     if blocked:
                         blocked_providers.append(pharmacy.title())
@@ -7426,6 +7631,7 @@ def home():
                     ("medplus", medplus_source),
                     ("pharmeasy", pharmeasy_source),
                     ("tata1mg", tata1mg_source),
+                    ("netmeds", netmeds_source),
                 ):
                     if source == "budget":
                         budget_providers.append(pharmacy.title())
@@ -7457,6 +7663,7 @@ def home():
         medplus_products=medplus_products,
         pharmeasy_products=pharmeasy_products,
         tata1mg_products=tata1mg_products,
+        netmeds_products=netmeds_products,
         cache_meta=cache_meta,
         error_message=error_message,
     )
