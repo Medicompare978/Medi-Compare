@@ -1895,97 +1895,6 @@ HTML = r"""
             }
         }
 
-
-        /* ============================================================
-           5-SECOND COMPAREMEDS CAPSULE INTRO
-           Fixed overlay: it never changes the page layout or blocks clicks.
-        ============================================================ */
-        .brand-intro-animation {
-            position: fixed;
-            inset: 0;
-            z-index: 99999;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            padding-top: 74px;
-            pointer-events: none;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 220ms ease, visibility 220ms ease;
-        }
-
-        .brand-intro-animation.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .brand-intro-inner {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            filter: drop-shadow(0 8px 20px rgba(0,0,0,0.18));
-        }
-
-        .brand-intro-capsules {
-            display: block;
-            width: clamp(150px, 28vw, 225px);
-            height: auto;
-            object-fit: contain;
-            transform-origin: center center;
-            animation: compareMedsCapsuleBlink 680ms ease-in-out infinite;
-        }
-
-        .brand-intro-cm {
-            margin-top: -7px;
-            font-size: clamp(34px, 7vw, 52px);
-            line-height: 0.95;
-            font-weight: 950;
-            letter-spacing: -2px;
-            background: linear-gradient(90deg, #1769d1 0%, #0c87cf 45%, #08ad79 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            opacity: 0.95;
-            animation: compareMedsCmPulse 1100ms ease-in-out infinite;
-        }
-
-        @keyframes compareMedsCapsuleBlink {
-            0%, 100% {
-                opacity: 0.38;
-                transform: scale(0.94);
-                filter: brightness(0.88) saturate(0.9);
-            }
-            45% {
-                opacity: 1;
-                transform: scale(1);
-                filter: brightness(1.15) saturate(1.12) drop-shadow(0 0 16px rgba(25, 183, 160, 0.30));
-            }
-            62% {
-                opacity: 0.52;
-                transform: scale(0.97);
-                filter: brightness(0.94) saturate(0.96);
-            }
-        }
-
-        @keyframes compareMedsCmPulse {
-            0%, 100% {
-                opacity: 0.58;
-                transform: translateY(0);
-            }
-            50% {
-                opacity: 1;
-                transform: translateY(-2px);
-            }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .brand-intro-capsules,
-            .brand-intro-cm {
-                animation: none;
-            }
-        }
-
         .container {
             width: min(1180px, calc(100% - 28px));
             margin: 22px auto 40px;
@@ -2925,16 +2834,19 @@ HTML = r"""
         }
         .comparison-panel h3 { margin: 0 0 6px; color: #087f5b; font-size: 19px; }
         .comparison-caption { margin: 0 0 12px; color: #66756f; font-size: 13px; line-height: 1.45; }
-        .comparison-table-wrap { width: 100%; overflow-x: auto; border: 1px solid #e2ebe7; border-radius: 12px; }
-        .comparison-table { width: 100%; border-collapse: collapse; min-width: 430px; background: #fff; }
-        .comparison-table th, .comparison-table td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #edf2ef; font-size: 13px; }
+        .comparison-table-wrap { width: 100%; overflow-x: hidden; border: 1px solid #e2ebe7; border-radius: 12px; }
+        .comparison-table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; }
+        .comparison-table th, .comparison-table td { padding: 10px 8px; text-align: left; vertical-align: middle; border-bottom: 1px solid #edf2ef; font-size: 13px; overflow-wrap: anywhere; }
+        .comparison-table th:nth-child(1), .comparison-table td:nth-child(1) { width: 22%; }
+        .comparison-table th:nth-child(2), .comparison-table td:nth-child(2) { width: 42%; }
+        .comparison-table th:nth-child(3), .comparison-table td:nth-child(3) { width: 20%; }
+        .comparison-table th:nth-child(4), .comparison-table td:nth-child(4) { width: 16%; }
         .comparison-table th { background: #eaf8f1; color: #285b4a; font-weight: 800; }
         .comparison-table tr:last-child td { border-bottom: 0; }
-        .comparison-table .compare-price { white-space: nowrap; font-weight: 800; color: #173e31; }
+        .comparison-table .compare-price { white-space: normal; overflow-wrap: anywhere; font-weight: 800; color: #173e31; }
         .comparison-table .best-value-row td { background: #effbf3; }
-        .best-value-pill { display: inline-block; padding: 3px 7px; margin-left: 5px; border-radius: 999px; background: #d5f5df; color: #176438; font-size: 10px; font-weight: 800; animation: bestValuePulse 1.8s ease-in-out infinite; }
-        @keyframes bestValuePulse { 0%,100% { transform: scale(1); box-shadow: 0 0 0 rgba(22,101,52,0); } 50% { transform: scale(1.04); box-shadow: 0 0 12px rgba(22,101,52,.15); } }
-        .comparison-buy { color: #087f5b; font-weight: 800; text-decoration: none; white-space: nowrap; }
+        .best-value-pill { display: inline-block; padding: 3px 6px; margin: 4px 0 0; border-radius: 999px; background: #d5f5df; color: #176438; font-size: 9px; font-weight: 800; }
+        .comparison-buy { display: inline-block; color: #087f5b; font-weight: 800; text-decoration: none; white-space: nowrap; font-size: 12px; }
         .comparison-jump { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
         .comparison-jump a { display: inline-flex; align-items: center; padding: 7px 10px; border-radius: 999px; background: #e9f7f1; color: #087f5b; font-size: 12px; font-weight: 700; text-decoration: none; }
         .products {
@@ -3950,7 +3862,12 @@ HTML = r"""
             .buy-button { padding: 9px 7px; font-size: 10px; text-align: center; }
             .comparison-panel { padding: 12px 10px; margin: 12px 0 18px; }
             .comparison-panel h3 { font-size: 17px; }
-            .comparison-table th, .comparison-table td { padding: 9px 8px; font-size: 12px; }
+            .comparison-table th, .comparison-table td { padding: 8px 5px; font-size: 11px; line-height: 1.3; }
+            .comparison-table th:nth-child(1), .comparison-table td:nth-child(1) { width: 22%; }
+            .comparison-table th:nth-child(2), .comparison-table td:nth-child(2) { width: 40%; }
+            .comparison-table th:nth-child(3), .comparison-table td:nth-child(3) { width: 22%; }
+            .comparison-table th:nth-child(4), .comparison-table td:nth-child(4) { width: 16%; }
+            .comparison-buy { font-size: 11px; }
         }
 
 
@@ -4450,24 +4367,6 @@ HTML = r"""
 <body>
 
 
-<!-- ============================================================
-     5-SECOND BRAND INTRO
-     Shows the supplied capsule mark above CM.
-     Fixed/transparent so the existing interface is not rearranged.
-============================================================ -->
-<div class="brand-intro-animation" id="brandIntroAnimation" aria-hidden="true">
-    <div class="brand-intro-inner">
-        <img
-            class="brand-intro-capsules"
-            src="/capsules-animation.png"
-            alt=""
-            aria-hidden="true"
-        >
-        <div class="brand-intro-cm" aria-hidden="true">CM</div>
-    </div>
-</div>
-
-
 <header class="header">
 
     <span class="floating-pill pill-one">💊</span>
@@ -4786,7 +4685,7 @@ HTML = r"""
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
                     <td class="compare-price">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
-                    <td>{% if item.url %}<a class="comparison-buy" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">View ↗</a>{% else %}<a class="comparison-buy" href="{{ item.search_url }}" target="_blank" rel="noopener noreferrer">Search ↗</a>{% endif %}</td>
+                    <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">View ↗</a></td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -6959,28 +6858,8 @@ HTML = r"""
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    // ============================================================
-    // 5-SECOND CAPSULE BLINK INTRO
-    // Runs on page open and on bottom-navigation clicks.
-    // ============================================================
-    const brandIntroAnimation = document.getElementById("brandIntroAnimation");
-    let brandIntroTimer = null;
-
-    function playBrandIntroAnimation() {
-        if (!brandIntroAnimation) return;
-
-        if (brandIntroTimer) {
-            clearTimeout(brandIntroTimer);
-        }
-
-        brandIntroAnimation.classList.remove("active");
-        void brandIntroAnimation.offsetWidth;
-        brandIntroAnimation.classList.add("active");
-
-        brandIntroTimer = setTimeout(function () {
-            brandIntroAnimation.classList.remove("active");
-        }, 5000);
-    }
+    // Brand intro overlay removed: navigation does not trigger the 5-second blink.
+    function playBrandIntroAnimation() {}
 
     navBuyMedi.addEventListener("click", function () {
         closeMedicalMenu();
@@ -7675,7 +7554,7 @@ def home():
             # Build a compact cross-pharmacy price summary from live/catalogue results.
             # Use each pharmacy's first returned offer; never invent missing prices or URLs.
             pharmacy_offers = [
-                ("Apollo", apollo_products, "https://www.apollopharmacy.in/search-medicines"),
+                ("Apollo", apollo_products, "https://www.apollopharmacy.in/search-medicines?searchTerm=" + requests.utils.quote(searched_medicine)),
                 ("MedPlus", medplus_products, "https://www.medplusmart.com/"),
                 ("PharmEasy", pharmeasy_products, "https://pharmeasy.in/"),
                 ("Tata 1mg", tata1mg_products, "https://www.1mg.com/search/all?name=" + requests.utils.quote(searched_medicine)),
