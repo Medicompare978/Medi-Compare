@@ -2913,6 +2913,30 @@ HTML = r"""
             }
         }
 
+        /* Search-result price comparison summary */
+        .comparison-panel {
+            margin: 16px 0 24px;
+            padding: 16px;
+            border: 1px solid #dcebe5;
+            border-radius: 18px;
+            background: linear-gradient(145deg, #ffffff, #f1fbf6);
+            box-shadow: 0 8px 24px rgba(8, 127, 91, 0.08);
+            animation: sectionIn .65s ease both;
+        }
+        .comparison-panel h3 { margin: 0 0 6px; color: #087f5b; font-size: 19px; }
+        .comparison-caption { margin: 0 0 12px; color: #66756f; font-size: 13px; line-height: 1.45; }
+        .comparison-table-wrap { width: 100%; overflow-x: auto; border: 1px solid #e2ebe7; border-radius: 12px; }
+        .comparison-table { width: 100%; border-collapse: collapse; min-width: 430px; background: #fff; }
+        .comparison-table th, .comparison-table td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #edf2ef; font-size: 13px; }
+        .comparison-table th { background: #eaf8f1; color: #285b4a; font-weight: 800; }
+        .comparison-table tr:last-child td { border-bottom: 0; }
+        .comparison-table .compare-price { white-space: nowrap; font-weight: 800; color: #173e31; }
+        .comparison-table .best-value-row td { background: #effbf3; }
+        .best-value-pill { display: inline-block; padding: 3px 7px; margin-left: 5px; border-radius: 999px; background: #d5f5df; color: #176438; font-size: 10px; font-weight: 800; animation: bestValuePulse 1.8s ease-in-out infinite; }
+        @keyframes bestValuePulse { 0%,100% { transform: scale(1); box-shadow: 0 0 0 rgba(22,101,52,0); } 50% { transform: scale(1.04); box-shadow: 0 0 12px rgba(22,101,52,.15); } }
+        .comparison-buy { color: #087f5b; font-weight: 800; text-decoration: none; white-space: nowrap; }
+        .comparison-jump { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .comparison-jump a { display: inline-flex; align-items: center; padding: 7px 10px; border-radius: 999px; background: #e9f7f1; color: #087f5b; font-size: 12px; font-weight: 700; text-decoration: none; }
         .products {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
@@ -3912,6 +3936,21 @@ HTML = r"""
             .medishop-card { padding: 20px 15px; }
             .app-nav-button .nav-label { font-size: 11px; }
             .app-nav-button .nav-icon { font-size: 23px; }
+            /* Compact side-by-side medicine cards on phones, like shopping apps */
+            .products { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+            .products .card { border-radius: 12px; }
+            .product-image-box { min-height: 108px; }
+            .product-image { max-height: 112px; object-fit: contain; }
+            .card-body { padding: 10px 9px; }
+            .product-name { font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+            .manufacturer, .meta { font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+            .price-row { gap: 4px; flex-wrap: wrap; }
+            .price { font-size: 15px; }
+            .mrp, .discount, .badge { font-size: 9px; }
+            .buy-button { padding: 9px 7px; font-size: 10px; text-align: center; }
+            .comparison-panel { padding: 12px 10px; margin: 12px 0 18px; }
+            .comparison-panel h3 { font-size: 17px; }
+            .comparison-table th, .comparison-table td { padding: 9px 8px; font-size: 12px; }
         }
 
 
@@ -4734,12 +4773,37 @@ HTML = r"""
     Results for "{{ searched_medicine }}"
 </h2>
 
+{% if comparison_rows %}
+<section class="comparison-panel" id="priceComparison" aria-label="Medicine price comparison">
+    <h3>📊 Compare prices across pharmacies</h3>
+    <p class="comparison-caption">Offers found for this search. Check the exact strength, composition and pack size before buying. Prices and stock can change on pharmacy websites.</p>
+    <div class="comparison-table-wrap">
+        <table class="comparison-table">
+            <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th>Price</th><th>Open</th></tr></thead>
+            <tbody>
+            {% for item in comparison_rows %}
+                <tr class="{% if item.is_best %}best-value-row{% endif %}">
+                    <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
+                    <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
+                    <td class="compare-price">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
+                    <td>{% if item.url %}<a class="comparison-buy" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">View ↗</a>{% else %}<a class="comparison-buy" href="{{ item.search_url }}" target="_blank" rel="noopener noreferrer">Search ↗</a>{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="comparison-jump">
+        <a href="#apollo-results">Apollo ↓</a><a href="#medplus-results">MedPlus ↓</a><a href="#pharmeasy-results">PharmEasy ↓</a><a href="#tata1mg-results">Tata 1mg ↓</a><a href="#netmeds-results">Netmeds ↓</a>
+    </div>
+    <p class="comparison-caption" style="margin:10px 0 0">*Best value means the lowest displayed price among offers returned for this search; it is not a recommendation to use a medicine.</p>
+</section>
+{% endif %}
 
 <!-- ========================================================
      APOLLO
      ======================================================== -->
 
-<section class="pharmacy-section pharmacy-result-reveal">
+<section class="pharmacy-section pharmacy-result-reveal" id="apollo-results">
 
     <div class="pharmacy-header">
 
@@ -4870,18 +4934,14 @@ HTML = r"""
                 {% endif %}
 
 
-                {% if product.product_url %}
-
                 <a
-                    href="{{ product.product_url }}"
+                    href="{{ product.product_url if product.product_url else 'https://www.apollopharmacy.in/search-medicines' }}"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="buy-button"
                 >
                     🛒 Buy on Apollo ↗
                 </a>
-
-                {% endif %}
 
             </div>
 
@@ -4907,7 +4967,7 @@ HTML = r"""
      MEDPLUS
      ======================================================== -->
 
-<section class="pharmacy-section pharmacy-result-reveal">
+<section class="pharmacy-section pharmacy-result-reveal" id="medplus-results">
 
     <div class="pharmacy-header">
 
@@ -5090,7 +5150,7 @@ HTML = r"""
      PHARMEASY
      ======================================================== -->
 
-<section class="pharmacy-section pharmacy-result-reveal">
+<section class="pharmacy-section pharmacy-result-reveal" id="pharmeasy-results">
 
     <div class="pharmacy-header">
 
@@ -5262,7 +5322,7 @@ HTML = r"""
 <!-- ========================================================
      TATA 1MG
      ======================================================== -->
-<section class="pharmacy-section pharmacy-result-reveal">
+<section class="pharmacy-section pharmacy-result-reveal" id="tata1mg-results">
     <div class="pharmacy-header">
         <h2>❤️ Tata 1mg</h2>
         <div class="pharmacy-meta">
@@ -5326,7 +5386,7 @@ HTML = r"""
 <!-- ========================================================
      NETMEDS
      ======================================================== -->
-<section class="pharmacy-section pharmacy-result-reveal">
+<section class="pharmacy-section pharmacy-result-reveal" id="netmeds-results">
     <div class="pharmacy-header">
         <h2>🟣 Netmeds</h2>
         <div class="pharmacy-meta">
@@ -7512,6 +7572,7 @@ def home():
     pharmeasy_products = []
     tata1mg_products = []
     netmeds_products = []
+    comparison_rows = []
 
     cache_meta = {
         "apollo": None,
@@ -7611,6 +7672,45 @@ def home():
                 netmeds_source,
             )
 
+            # Build a compact cross-pharmacy price summary from live/catalogue results.
+            # Use each pharmacy's first returned offer; never invent missing prices or URLs.
+            pharmacy_offers = [
+                ("Apollo", apollo_products, "https://www.apollopharmacy.in/search-medicines"),
+                ("MedPlus", medplus_products, "https://www.medplusmart.com/"),
+                ("PharmEasy", pharmeasy_products, "https://pharmeasy.in/"),
+                ("Tata 1mg", tata1mg_products, "https://www.1mg.com/search/all?name=" + requests.utils.quote(searched_medicine)),
+                ("Netmeds", netmeds_products, "https://www.netmeds.com/"),
+            ]
+            for pharmacy_name, offers, fallback_url in pharmacy_offers:
+                if not offers:
+                    continue
+                product = offers[0]
+                raw_price = product.get("price")
+                if raw_price is None:
+                    raw_price = product.get("regular_price")
+                if raw_price is None:
+                    raw_price = product.get("membership_price")
+                if raw_price is None:
+                    raw_price = product.get("mrp")
+                try:
+                    parsed_price = float(raw_price) if raw_price not in (None, "") else None
+                except (TypeError, ValueError):
+                    parsed_price = None
+                comparison_rows.append({
+                    "pharmacy": pharmacy_name,
+                    "name": product.get("name") or product.get("product_name") or searched_medicine,
+                    "pack_size": product.get("pack_size") or product.get("pack"),
+                    "price": parsed_price,
+                    "url": product.get("product_url"),
+                    "search_url": fallback_url,
+                    "is_best": False,
+                })
+            priced_rows = [row for row in comparison_rows if row["price"] is not None and row["price"] > 0]
+            if priced_rows:
+                lowest_price = min(row["price"] for row in priced_rows)
+                for row in priced_rows:
+                    row["is_best"] = abs(row["price"] - lowest_price) < 0.005
+
             if (
                 not apollo_products
                 and not medplus_products
@@ -7664,6 +7764,7 @@ def home():
         pharmeasy_products=pharmeasy_products,
         tata1mg_products=tata1mg_products,
         netmeds_products=netmeds_products,
+        comparison_rows=comparison_rows,
         cache_meta=cache_meta,
         error_message=error_message,
     )
