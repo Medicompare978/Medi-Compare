@@ -462,18 +462,28 @@ def get_products_by_keys(product_keys):
 
         product_url = row["product_url"] or extract_product_url(raw_product)
         image_url = row["image_url"] or extract_image_url(raw_product)
+        # Older catalogue rows may have saved the provider's product_name as
+        # raw_json but stored the display name as "Unnamed medicine".
+        recovered_name = row["name"]
+        if not recovered_name or str(recovered_name).strip().lower() == "unnamed medicine":
+            recovered_name = first_value(raw_product, "name", "product_name", "medicine_name", "title", "display_name") or "Unnamed medicine"
+        recovered_manufacturer = row["manufacturer"] or first_value(raw_product, "manufacturer", "manufacturer_name", "brand")
+        recovered_pack = row["pack_size"] or first_value(raw_product, "pack_size", "pack", "quantity", "unit_size", "unitSize", "packaging")
+        recovered_composition = row["composition"] or first_value(raw_product, "composition", "salt", "ingredients", "description")
+        recovered_price = row["price"] if row["price"] is not None else to_float(first_value(raw_product, "price", "selling_price", "discounted_price", "final_price", "regular_price", "membership_price"))
+        recovered_mrp = row["mrp"] if row["mrp"] is not None else to_float(first_value(raw_product, "mrp", "MRP", "mrp_price", "maximum_retail_price"))
 
         products.append(
             {
-                "name": row["name"],
-                "manufacturer": row["manufacturer"],
-                "pack_size": row["pack_size"],
-                "composition": row["composition"],
-                "price": row["price"],
-                "mrp": row["mrp"],
-                "discount_percentage": row["discount_percentage"],
-                "availability": row["availability"],
-                "is_prescription_required": bool(row["is_prescription_required"]),
+                "name": recovered_name,
+                "manufacturer": recovered_manufacturer,
+                "pack_size": recovered_pack,
+                "composition": recovered_composition,
+                "price": recovered_price,
+                "mrp": recovered_mrp,
+                "discount_percentage": row["discount_percentage"] or first_value(raw_product, "discount_percentage", "discount_percent", "discount", "discount_str"),
+                "availability": row["availability"] or first_value(raw_product, "availability", "is_in_stock", "is_available", "in_stock", "stock_status", "status"),
+                "is_prescription_required": bool(row["is_prescription_required"]) or parse_bool(first_value(raw_product, "is_prescription_required", "prescription_required", "rx_required", "requires_prescription")),
                 "product_url": product_url,
                 "image_url": image_url,
             }
@@ -1295,23 +1305,21 @@ def cached_search(pharmacy, query, fetch_products):
 # ============================================================
 
 def get_products(result):
+    """Read product arrays from common Parse response envelopes."""
+    if isinstance(result, list):
+        return [item for item in result if isinstance(item, dict)]
     if not isinstance(result, dict):
         return []
 
-    data = result.get("data", result)
-
-    if isinstance(data, dict):
-        products = data.get("products")
-        if isinstance(products, list):
-            return products
-
-        results = data.get("results")
-        if isinstance(results, list):
-            return results
-
-    if isinstance(data, list):
-        return data
-
+    candidates = [result.get("data"), result]
+    for data in candidates:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            for key in ("products", "results", "items", "medicines", "data"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
     return []
 
 
@@ -1547,6 +1555,43 @@ def search_netmeds(query):
 
 
 # ============================================================
+# MEDPLUS NORMALIZATION
+# ============================================================
+
+def normalize_medplus_products(products):
+    """Map MedPlus API field names to the common product-card schema."""
+    normalized = []
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+        name = first_value(product, "name", "product_name", "medicine_name", "title", "display_name")
+        product_url = extract_product_url(product)
+        image_url = extract_image_url(product)
+        if product_url:
+            product_url = urljoin("https://www.medplusmart.com/", str(product_url).strip())
+        if image_url:
+            image_url = urljoin("https://www.medplusmart.com/", str(image_url).strip())
+        price = first_value(product, "price", "selling_price", "discounted_price", "final_price", "regular_price", "membership_price")
+        mrp = first_value(product, "mrp", "MRP", "mrp_price", "maximum_retail_price")
+        normalized.append({
+            "name": name or "Unnamed medicine",
+            "manufacturer": first_value(product, "manufacturer", "manufacturer_name", "brand", "manufacturerName"),
+            "pack_size": first_value(product, "pack_size", "pack", "quantity", "unit_size", "unitSize", "packaging"),
+            "composition": first_value(product, "composition", "salt", "ingredients", "description"),
+            "price": to_float(price, 0),
+            "mrp": to_float(mrp),
+            "discount_percentage": first_value(product, "discount_percentage", "discount_percent", "discount", "discount_str"),
+            "availability": first_value(product, "availability", "is_in_stock", "is_available", "in_stock", "stock_status", "status"),
+            "is_prescription_required": parse_bool(first_value(product, "is_prescription_required", "prescription_required", "rx_required", "requires_prescription")),
+            "product_url": product_url,
+            "image_url": image_url,
+            "product_id": first_value(product, "product_id", "id", "sku", "productId"),
+            "raw_source": product,
+        })
+    return normalized
+
+
+# ============================================================
 # PHARMEASY NORMALIZATION
 # ============================================================
 
@@ -1658,8 +1703,10 @@ def fetch_apollo_products(query):
 
 def fetch_medplus_products(query):
     result = search_medplus(query)
-    if isinstance(result, dict) and result.get("status") == "success":
-        return {"ok": True, "products": get_products(result)}
+    if isinstance(result, dict) and (result.get("status") == "success" or get_products(result)):
+        products = normalize_medplus_products(get_products(result))
+        products = filter_exact_strength_results(query, products)
+        return {"ok": True, "products": products}
 
     return {
         "ok": False,
@@ -4685,7 +4732,7 @@ HTML = r"""
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
                     <td class="compare-price">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
-                    <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">View ↗</a></td>
+                    <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</a></td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -7390,7 +7437,9 @@ def image_proxy():
         return Response("Invalid image URL", status=400, mimetype="text/plain")
 
     allowed = (
-        host.endswith(".pharmeasy.in")
+        host == "apollopharmacy.in"
+        or host.endswith(".apollopharmacy.in")
+        or host.endswith(".pharmeasy.in")
         or host.endswith(".medplusmart.com")
         or host.endswith(".medplusindia.com")
         or host == "1mg.com"
@@ -7504,6 +7553,7 @@ def home():
                 searched_medicine,
                 fetch_medplus_products,
             )
+            medplus_products = filter_exact_strength_results(searched_medicine, medplus_products)
             cache_meta["medplus"] = format_cache_meta(
                 medplus_checked_at,
                 medplus_source,
@@ -7518,6 +7568,7 @@ def home():
                 searched_medicine,
                 fetch_pharmeasy_products,
             )
+            pharmeasy_products = filter_exact_strength_results(searched_medicine, pharmeasy_products)
             cache_meta["pharmeasy"] = format_cache_meta(
                 pharmeasy_checked_at,
                 pharmeasy_source,
@@ -7532,6 +7583,7 @@ def home():
                 searched_medicine,
                 fetch_tata1mg_products,
             )
+            tata1mg_products = filter_exact_strength_results(searched_medicine, tata1mg_products)
             cache_meta["tata1mg"] = format_cache_meta(
                 tata1mg_checked_at,
                 tata1mg_source,
@@ -7546,6 +7598,7 @@ def home():
                 searched_medicine,
                 fetch_netmeds_products,
             )
+            netmeds_products = filter_exact_strength_results(searched_medicine, netmeds_products)
             cache_meta["netmeds"] = format_cache_meta(
                 netmeds_checked_at,
                 netmeds_source,
@@ -7647,6 +7700,24 @@ def home():
         cache_meta=cache_meta,
         error_message=error_message,
     )
+
+
+
+
+@app.errorhandler(500)
+def handle_internal_server_error(error):
+    """Log the original server exception and show a friendly page to visitors."""
+    original = getattr(error, "original_exception", None)
+    if original:
+        app.logger.error("Unhandled request exception", exc_info=(type(original), original, original.__traceback__))
+    else:
+        app.logger.error("HTTP 500 returned: %s", error)
+    return render_template_string("""
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>CompareMeds temporarily unavailable</title>
+        <style>body{font-family:Arial,sans-serif;background:#f4f8f5;color:#20352b;padding:28px;max-width:680px;margin:7vh auto}main{background:white;padding:24px;border-radius:16px;box-shadow:0 8px 30px #173c2414}a{color:#176b45}</style>
+        </head><body><main><h2>CompareMeds is temporarily unavailable</h2><p>Something went wrong while loading this request. Please try again in a moment.</p><p>Your saved search and medicine catalogue have not been intentionally cleared.</p><a href="/">Return to CompareMeds</a></main></body></html>
+    """), 500
 
 
 # ============================================================
