@@ -3700,6 +3700,8 @@ HTML = r"""
         .scan-card .labscan-link { border-color:#d9e3f7; color:#365ba6; }
         .labscan-link:hover { filter:brightness(.97); }
         .labscan-search-animation { height:4px; overflow:hidden; border-radius:9px; background:#dceee8; margin:12px 0 0; }
+        .labscan-card.has-results .labscan-search-animation { display:none !important; animation:none !important; }
+        .labscan-card.has-results .labscan-search-animation::after { animation:none !important; }
         .labscan-search-animation::after { content:""; display:block; width:35%; height:100%; background:#22a18b; animation:labscanSweep 1.4s ease-in-out infinite; }
         @keyframes labscanSweep { from { transform:translateX(-110%); } to { transform:translateX(310%); } }
         @media (max-width:700px) { .labscan-grid { grid-template-columns:1fr; } .labscan-card p { min-height:0; } }
@@ -5573,8 +5575,8 @@ HTML = r"""
             <div class="labscan-icon">🧪</div>
             <h3 id="labscanLabHeading">Nearby Laboratories</h3>
             <p>Find diagnostic labs for blood tests and routine investigations.</p>
-            <div class="labscan-field"><label for="labState">State</label><input id="labState" type="text" maxlength="60" placeholder="Enter your state" autocomplete="address-level1"></div>
-            <div class="labscan-field"><label for="labPincode">PIN code</label><input id="labPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="postal-code"></div>
+            <div class="labscan-field"><label for="labState">State</label><input id="labState" name="lab_state" type="text" maxlength="60" placeholder="Enter your state" autocomplete="off" autocapitalize="words"></div>
+            <div class="labscan-field"><label for="labPincode">PIN code</label><input id="labPincode" name="lab_pincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="off"></div>
             <button type="button" class="labscan-search" id="labSearchButton">🔎 Find Laboratories</button>
             <div class="labscan-search-animation" aria-hidden="true"></div>
             <div class="labscan-results" id="labResults"><h4 id="labResultsTitle">Laboratories near you</h4><div class="labscan-links" id="labLinks"></div></div>
@@ -5583,8 +5585,8 @@ HTML = r"""
             <div class="labscan-icon">🩻</div>
             <h3 id="labscanScanHeading">Nearby Scanning Centres</h3>
             <p>Find X-ray, CT, MRI, ultrasound and diagnostic imaging centres.</p>
-            <div class="labscan-field"><label for="scanState">State</label><input id="scanState" type="text" maxlength="60" placeholder="Enter your state" autocomplete="address-level1"></div>
-            <div class="labscan-field"><label for="scanPincode">PIN code</label><input id="scanPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="postal-code"></div>
+            <div class="labscan-field"><label for="scanState">State</label><input id="scanState" name="scan_state" type="text" maxlength="60" placeholder="Enter your state" autocomplete="off" autocapitalize="words"></div>
+            <div class="labscan-field"><label for="scanPincode">PIN code</label><input id="scanPincode" name="scan_pincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="off"></div>
             <button type="button" class="labscan-search" id="scanSearchButton">🔎 Find Scanning Centres</button>
             <div class="labscan-search-animation" aria-hidden="true"></div>
             <div class="labscan-results" id="scanResults"><h4 id="scanResultsTitle">Scanning centres near you</h4><div class="labscan-links" id="scanLinks"></div></div>
@@ -7078,6 +7080,16 @@ HTML = r"""
         pinInput.addEventListener("input", function () {
             pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, 6);
         });
+        [stateInput, pinInput].forEach(function (input) {
+            input.setAttribute("autocomplete", "off");
+            input.addEventListener("input", function () {
+                const card = button.closest(".labscan-card");
+                if (card) card.classList.remove("has-results");
+                result.classList.remove("show");
+                const animation = card ? card.querySelector(".labscan-search-animation") : null;
+                if (animation) { animation.style.display = "block"; animation.style.animation = ""; }
+            });
+        });
         button.addEventListener("click", function () {
             const state = stateInput.value.trim();
             const pincode = pinInput.value.trim();
@@ -7113,8 +7125,10 @@ HTML = r"""
             });
             title.textContent = config.title + " near " + pincode + ", " + state;
             result.classList.add("show");
-            const animation = button.closest(".labscan-card").querySelector(".labscan-search-animation");
-            if (animation) animation.style.display = "none";
+            const card = button.closest(".labscan-card");
+            if (card) card.classList.add("has-results");
+            const animation = card ? card.querySelector(".labscan-search-animation") : null;
+            if (animation) { animation.style.display = "none"; animation.style.animation = "none"; }
         });
     }
 
