@@ -3550,7 +3550,7 @@ HTML = r"""
             width: min(680px, calc(100% - 20px));
             z-index: 1000;
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 6px;
             padding: 7px;
             background: rgba(255,255,255,0.97);
@@ -3591,6 +3591,14 @@ HTML = r"""
         .app-nav-button .nav-label {
             font-size: 14px;
             line-height: 1.1;
+            text-align: center;
+        }
+
+        @media (max-width: 520px) {
+            .app-bottom-nav { gap: 3px; padding: 5px; }
+            .app-nav-button { min-height: 61px; border-radius: 13px; }
+            .app-nav-button .nav-icon { font-size: 22px; }
+            .app-nav-button .nav-label { font-size: 10px; letter-spacing: -.15px; }
         }
 
         .app-nav-button.active {
@@ -3656,6 +3664,45 @@ HTML = r"""
         .medishop-map-link { display:flex; align-items:center; justify-content:space-between; gap:12px; text-decoration:none; color:#8b5b00; background:#fffaf0; border:1px solid #eadbbd; border-radius:13px; padding:14px 15px; font-weight:800; }
         .medishop-map-link:hover { background:#fff3d8; transform:translateY(-1px); }
         .medishop-map-link span:last-child { font-size:18px; }
+
+        /* ============================================================
+           LABORATORIES + DIAGNOSTIC SCANNING CENTRES
+           Google Maps search links; no Maps API key required.
+        ============================================================ */
+        .labscan-panel { display:none; animation:navPanelIn .35s ease both; }
+        body.labscan-mode .labscan-panel { display:block; }
+        body.labscan-mode .main-content-for-nav,
+        body.labscan-mode .diet-panel,
+        body.labscan-mode .hospital-panel,
+        body.labscan-mode .medishop-panel { display:none; }
+        .labscan-intro { text-align:center; margin:20px auto 16px; max-width:760px; }
+        .labscan-intro h2 { margin:6px 0 8px; color:#176b62; font-size:clamp(24px,5vw,34px); }
+        .labscan-intro p { margin:0; color:#65756f; line-height:1.55; }
+        .labscan-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+        .labscan-card { border-radius:22px; padding:22px 18px; border:1px solid #d7e9e4; background:linear-gradient(145deg,#f8fffc,#edf8f4); box-shadow:0 8px 24px rgba(20,90,75,.07); }
+        .labscan-card.scan-card { border-color:#d9e3f7; background:linear-gradient(145deg,#fbfcff,#eef3ff); }
+        .labscan-icon { font-size:38px; text-align:center; }
+        .labscan-card h3 { text-align:center; color:#176b62; margin:8px 0; font-size:22px; }
+        .labscan-card.scan-card h3 { color:#365ba6; }
+        .labscan-card p { text-align:center; color:#667770; line-height:1.45; min-height:42px; }
+        .labscan-field { margin-top:12px; }
+        .labscan-field label { display:block; font-weight:700; margin:0 0 6px; color:#31564e; }
+        .labscan-field input { box-sizing:border-box; width:100%; border:1px solid #cfe2dc; border-radius:12px; padding:13px; background:white; color:#20312c; font:inherit; font-size:16px; }
+        .scan-card .labscan-field input { border-color:#d5def1; }
+        .labscan-search { width:100%; margin-top:15px; border:0; border-radius:13px; min-height:49px; background:#167c6e; color:white; font-weight:800; font-size:15px; cursor:pointer; }
+        .scan-card .labscan-search { background:#3d63b5; }
+        .labscan-results { display:none; margin-top:16px; padding-top:14px; border-top:1px solid #dceae5; }
+        .labscan-results.show { display:block; }
+        .labscan-results h4 { margin:0 0 10px; color:#176b62; }
+        .scan-card .labscan-results h4 { color:#365ba6; }
+        .labscan-links { display:grid; gap:8px; }
+        .labscan-link { display:flex; justify-content:space-between; align-items:center; gap:10px; text-decoration:none; border:1px solid #d7e9e4; background:white; color:#176b62; border-radius:11px; padding:12px; font-weight:750; line-height:1.25; }
+        .scan-card .labscan-link { border-color:#d9e3f7; color:#365ba6; }
+        .labscan-link:hover { filter:brightness(.97); }
+        .labscan-search-animation { height:4px; overflow:hidden; border-radius:9px; background:#dceee8; margin:12px 0 0; }
+        .labscan-search-animation::after { content:""; display:block; width:35%; height:100%; background:#22a18b; animation:labscanSweep 1.4s ease-in-out infinite; }
+        @keyframes labscanSweep { from { transform:translateX(-110%); } to { transform:translateX(310%); } }
+        @media (max-width:700px) { .labscan-grid { grid-template-columns:1fr; } .labscan-card p { min-height:0; } }
 
         .diet-panel {
             display: none;
@@ -5512,6 +5559,40 @@ HTML = r"""
     </div>
 </div>
 
+<!-- ============================================================
+     LABORATORIES + SCANNING CENTRES SECTION
+============================================================ -->
+<div class="labscan-panel" id="labscanPanel">
+    <div class="labscan-intro">
+        <div style="font-size:42px;line-height:1">🧬 🩻</div>
+        <h2>Nearby Labs &amp; Scanning Centres</h2>
+        <p>Enter your state and 6-digit PIN code. Choose a test or scan type to open matching places in Google Maps. Availability and services are shown by Google Maps and the provider.</p>
+    </div>
+    <div class="labscan-grid">
+        <section class="labscan-card" aria-labelledby="labscanLabHeading">
+            <div class="labscan-icon">🧪</div>
+            <h3 id="labscanLabHeading">Nearby Laboratories</h3>
+            <p>Find diagnostic labs for blood tests and routine investigations.</p>
+            <div class="labscan-field"><label for="labState">State</label><input id="labState" type="text" maxlength="60" placeholder="Enter your state" autocomplete="address-level1"></div>
+            <div class="labscan-field"><label for="labPincode">PIN code</label><input id="labPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="postal-code"></div>
+            <button type="button" class="labscan-search" id="labSearchButton">🔎 Find Laboratories</button>
+            <div class="labscan-search-animation" aria-hidden="true"></div>
+            <div class="labscan-results" id="labResults"><h4 id="labResultsTitle">Laboratories near you</h4><div class="labscan-links" id="labLinks"></div></div>
+        </section>
+        <section class="labscan-card scan-card" aria-labelledby="labscanScanHeading">
+            <div class="labscan-icon">🩻</div>
+            <h3 id="labscanScanHeading">Nearby Scanning Centres</h3>
+            <p>Find X-ray, CT, MRI, ultrasound and diagnostic imaging centres.</p>
+            <div class="labscan-field"><label for="scanState">State</label><input id="scanState" type="text" maxlength="60" placeholder="Enter your state" autocomplete="address-level1"></div>
+            <div class="labscan-field"><label for="scanPincode">PIN code</label><input id="scanPincode" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" autocomplete="postal-code"></div>
+            <button type="button" class="labscan-search" id="scanSearchButton">🔎 Find Scanning Centres</button>
+            <div class="labscan-search-animation" aria-hidden="true"></div>
+            <div class="labscan-results" id="scanResults"><h4 id="scanResultsTitle">Scanning centres near you</h4><div class="labscan-links" id="scanLinks"></div></div>
+        </section>
+    </div>
+    <p style="text-align:center;color:#6b7772;font-size:12px;line-height:1.5;margin:16px 6px 0">CompareMeds opens Google Maps search results; it does not independently verify a centre's accreditation, price, test availability or opening hours. Call the centre to confirm before visiting.</p>
+</div>
+
 </main>
 
 
@@ -5612,6 +5693,10 @@ HTML = r"""
     <button type="button" class="app-nav-button" id="navMediShop" data-section="medishop">
         <span class="nav-icon">🏪</span>
         <span class="nav-label">Medi Shop</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navLabScan" data-section="labscan" aria-label="Laboratories and scanning centres">
+        <span class="nav-icon">🧬</span>
+        <span class="nav-label">Labs &amp; Scans</span>
     </button>
 </nav>
 
@@ -6892,11 +6977,12 @@ HTML = r"""
     const navDiet = document.getElementById("navDiet");
     const navHospitals = document.getElementById("navHospitals");
     const navMediShop = document.getElementById("navMediShop");
+    const navLabScan = document.getElementById("navLabScan");
     const dietPanel = document.getElementById("dietPanel");
     const mainContentForNav = document.getElementById("mainContentForNav");
 
     function setActiveNav(button) {
-        [navBuyMedi, navStepCounter, navDiet, navHospitals, navMediShop].forEach(function (item) {
+        [navBuyMedi, navStepCounter, navDiet, navHospitals, navMediShop, navLabScan].forEach(function (item) {
             item.classList.toggle("active", item === button);
         });
     }
@@ -6910,7 +6996,7 @@ HTML = r"""
 
     navBuyMedi.addEventListener("click", function () {
         closeMedicalMenu();
-        document.body.classList.remove("step-mode", "diet-mode", "hospital-mode", "medishop-mode");
+        document.body.classList.remove("step-mode", "diet-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("buy-mode");
         mainContentForNav.classList.remove("buy-mode");
         void mainContentForNav.offsetWidth;
@@ -6922,7 +7008,7 @@ HTML = r"""
 
     navStepCounter.addEventListener("click", function () {
         closeMedicalMenu();
-        document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode", "medishop-mode");
+        document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("step-mode");
         setActiveNav(navStepCounter);
         playBrandIntroAnimation();
@@ -6931,7 +7017,7 @@ HTML = r"""
 
     navDiet.addEventListener("click", function () {
         closeMedicalMenu();
-        document.body.classList.remove("buy-mode", "step-mode", "hospital-mode", "medishop-mode");
+        document.body.classList.remove("buy-mode", "step-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("diet-mode");
         setActiveNav(navDiet);
         playBrandIntroAnimation();
@@ -6940,7 +7026,7 @@ HTML = r"""
 
     navHospitals.addEventListener("click", function () {
         closeMedicalMenu();
-        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "medishop-mode");
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("hospital-mode");
         setActiveNav(navHospitals);
         playBrandIntroAnimation();
@@ -6950,10 +7036,114 @@ HTML = r"""
     navMediShop.addEventListener("click", function () {
         closeMedicalMenu();
         document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode");
+        document.body.classList.add("medishop-mode", "labscan-mode");
+        setActiveNav(navMediShop);
+        playBrandIntroAnimation();
+        scrollToTopOfContent();
+    });
+
+    // ============================================================
+    navMediShop.addEventListener("click", function () {
+        closeMedicalMenu();
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode", "labscan-mode");
         document.body.classList.add("medishop-mode");
         setActiveNav(navMediShop);
         playBrandIntroAnimation();
         scrollToTopOfContent();
+    });
+
+    navLabScan.addEventListener("click", function () {
+        closeMedicalMenu();
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode", "medishop-mode");
+        document.body.classList.add("labscan-mode");
+        setActiveNav(navLabScan);
+        scrollToTopOfContent();
+    });
+
+    // ============================================================
+    // LABORATORIES + SCANNING CENTRES
+    // State + PIN code -> Google Maps searches. No API key needed.
+    // ============================================================
+    function mapsSearchUrl(query) {
+        return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
+    }
+
+    function setupLocalMedicalSearch(config) {
+        const stateInput = document.getElementById(config.stateId);
+        const pinInput = document.getElementById(config.pinId);
+        const button = document.getElementById(config.buttonId);
+        const result = document.getElementById(config.resultId);
+        const title = document.getElementById(config.titleId);
+        const links = document.getElementById(config.linksId);
+        pinInput.addEventListener("input", function () {
+            pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, 6);
+        });
+        button.addEventListener("click", function () {
+            const state = stateInput.value.trim();
+            const pincode = pinInput.value.trim();
+            if (!state) {
+                stateInput.setCustomValidity("Please enter your state.");
+                stateInput.reportValidity();
+                stateInput.setCustomValidity("");
+                stateInput.focus();
+                return;
+            }
+            if (!/^\d{6}$/.test(pincode)) {
+                pinInput.setCustomValidity("Please enter a valid 6-digit PIN code.");
+                pinInput.reportValidity();
+                pinInput.setCustomValidity("");
+                pinInput.focus();
+                return;
+            }
+            const area = pincode + ", " + state + ", India";
+            links.innerHTML = "";
+            config.searches.forEach(function (item) {
+                const link = document.createElement("a");
+                link.className = "labscan-link";
+                link.href = mapsSearchUrl(item.query + " near " + area);
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                const label = document.createElement("span");
+                label.textContent = item.label;
+                const arrow = document.createElement("span");
+                arrow.textContent = "↗";
+                link.appendChild(label);
+                link.appendChild(arrow);
+                links.appendChild(link);
+            });
+            title.textContent = config.title + " near " + pincode + ", " + state;
+            result.classList.add("show");
+            const animation = button.closest(".labscan-card").querySelector(".labscan-search-animation");
+            if (animation) animation.style.display = "none";
+        });
+    }
+
+    setupLocalMedicalSearch({
+        stateId: "labState", pinId: "labPincode", buttonId: "labSearchButton",
+        resultId: "labResults", titleId: "labResultsTitle", linksId: "labLinks",
+        title: "Laboratories",
+        searches: [
+            {label:"🧪 All Diagnostic Laboratories", query:"diagnostic laboratories"},
+            {label:"🩸 Hemoglobin / CBC Blood Test", query:"hemoglobin CBC blood test laboratory"},
+            {label:"🧬 Blood Group Test", query:"blood group test laboratory"},
+            {label:"🦋 Thyroid Profile (T3 T4 TSH)", query:"thyroid profile test laboratory"},
+            {label:"🧫 Routine Blood Tests", query:"blood testing laboratory"},
+            {label:"🧪 NABL-Accredited Laboratories", query:"NABL accredited medical laboratory"}
+        ]
+    });
+
+    setupLocalMedicalSearch({
+        stateId: "scanState", pinId: "scanPincode", buttonId: "scanSearchButton",
+        resultId: "scanResults", titleId: "scanResultsTitle", linksId: "scanLinks",
+        title: "Scanning centres",
+        searches: [
+            {label:"🩻 All Diagnostic Imaging Centres", query:"diagnostic imaging centre"},
+            {label:"🦴 X-ray / Fracture Imaging", query:"X-ray centre"},
+            {label:"🌀 CT Scan", query:"CT scan centre"},
+            {label:"🧲 MRI Scan", query:"MRI scan centre"},
+            {label:"🤰 Ultrasound / Sonography", query:"ultrasound sonography centre"},
+            {label:"🩺 Full Body Health Check-up", query:"full body health checkup diagnostic centre"}
+        ]
     });
 
     // ============================================================
