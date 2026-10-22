@@ -3615,6 +3615,39 @@ HTML = r"""
             margin-top: 1px;
         }
 
+        body.specialist-mode #mainContentForNav, body.specialist-mode .diet-panel, body.specialist-mode .hospital-panel, body.specialist-mode .medishop-panel, body.specialist-mode .labscan-panel, body.specialist-mode #insurancePanel { display:none !important; }
+        body.specialist-mode #specialistPanel { display:block; }
+        body.insurance-mode #mainContentForNav, body.insurance-mode .diet-panel, body.insurance-mode .hospital-panel, body.insurance-mode .medishop-panel, body.insurance-mode .labscan-panel, body.insurance-mode #specialistPanel { display:none !important; }
+        body.insurance-mode #insurancePanel { display:block; }
+
+        /* V13.5 home shortcuts: specialist doctors and health insurance */
+        .home-health-shortcuts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:16px 0 18px; }
+        .home-health-shortcut { text-align:left; border:1px solid #d9e8e2; border-radius:18px; padding:17px 15px; background:linear-gradient(145deg,#f7fffb,#eaf8f2); color:#174f42; cursor:pointer; min-height:118px; box-shadow:0 6px 18px rgba(20,90,75,.06); transition:transform .2s,box-shadow .2s; }
+        .home-health-shortcut:nth-child(2) { background:linear-gradient(145deg,#fffaf2,#fff1d9); border-color:#f0dfbd; color:#775018; }
+        .home-health-shortcut:active { transform:scale(.98); }
+        .home-health-shortcut .shortcut-icon { display:block; font-size:28px; margin-bottom:8px; }
+        .home-health-shortcut strong { display:block; font-size:15px; line-height:1.25; }
+        .home-health-shortcut small { display:block; margin-top:6px; font-size:12px; line-height:1.4; opacity:.8; }
+        .step-counter { display:none !important; }
+        body.step-mode .main-content-for-nav .step-counter { display:flex !important; }
+        body.step-mode .main-content-for-nav .home-health-shortcuts { display:none !important; }
+        .health-service-panel { display:none; animation:navPanelIn .35s ease both; }
+        .health-service-card { max-width:850px; margin:18px auto; padding:22px 18px; border-radius:22px; background:linear-gradient(145deg,#f7fffb,#edf8f3); border:1px solid #d6e9df; box-shadow:0 8px 24px rgba(20,90,75,.07); }
+        .health-service-card h2 { text-align:center; color:#176b58; margin:6px 0 8px; font-size:clamp(24px,5vw,32px); }
+        .health-service-card .service-subtitle { text-align:center; color:#687873; line-height:1.5; margin:0 0 18px; }
+        .service-location-row { display:grid; grid-template-columns:1fr auto; gap:10px; margin:12px 0 16px; }
+        .service-location-row input { min-width:0; padding:13px; border:1px solid #cfe0d8; border-radius:12px; font-size:16px; }
+        .service-action { border:0; border-radius:12px; padding:13px 16px; background:#087f5b; color:white; font-weight:800; cursor:pointer; }
+        .service-link-list { display:grid; gap:10px; margin-top:14px; }
+        .service-link { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px; border-radius:13px; background:white; border:1px solid #dcebe4; color:#176b58; text-decoration:none; font-weight:750; }
+        .insurance-list { display:grid; gap:12px; margin-top:18px; }
+        .insurance-item { background:white; border:1px solid #eee0c7; border-radius:15px; padding:15px; }
+        .insurance-item h3 { margin:0 0 5px; color:#805716; font-size:17px; }
+        .insurance-item p { margin:0 0 10px; color:#6d706b; font-size:13px; line-height:1.45; }
+        .insurance-item a { display:inline-block; color:#8a5a00; font-weight:800; text-decoration:none; padding:8px 11px; border-radius:9px; background:#fff5df; }
+        .service-disclaimer { font-size:12px; color:#687873; line-height:1.5; margin-top:16px; }
+        @media(max-width:520px) { .home-health-shortcuts { gap:9px; } .home-health-shortcut { padding:14px 11px; min-height:120px; } .service-location-row { grid-template-columns:1fr; } .service-action { width:100%; } }
+
         /* ============================================================
            NEARBY HOSPITALS
         ============================================================ */
@@ -4695,6 +4728,18 @@ HTML = r"""
 
 <div class="pre-search-animations{% if searched_medicine %} hide-on-results{% endif %}" id="preSearchAnimations">
 
+    <div class="home-health-shortcuts" id="homeHealthShortcuts">
+        <button type="button" class="home-health-shortcut" id="openSpecialists">
+            <span class="shortcut-icon" aria-hidden="true">🩺</span>
+            <strong>Nearby Specialist Doctors</strong>
+            <small>Find ENT, skin, heart, mental-health and other specialists nearby.</small>
+        </button>
+        <button type="button" class="home-health-shortcut" id="openInsurance">
+            <span class="shortcut-icon" aria-hidden="true">🛡️</span>
+            <strong>Health Insurance Policies</strong>
+            <small>Explore plans and compare coverage, exclusions and costs.</small>
+        </button>
+    </div>
 
     <div class="step-counter" id="stepCounter">
         <div class="step-icon" aria-hidden="true">🚶</div>
@@ -5593,6 +5638,42 @@ HTML = r"""
         </section>
     </div>
     <p style="text-align:center;color:#6b7772;font-size:12px;line-height:1.5;margin:16px 6px 0">CompareMeds opens Google Maps search results; it does not independently verify a centre's accreditation, price, test availability or opening hours. Call the centre to confirm before visiting.</p>
+</div>
+
+<!-- NEARBY SPECIALIST DOCTORS -->
+<div class="health-service-panel" id="specialistPanel">
+  <div class="health-service-card">
+    <div style="text-align:center;font-size:42px">🩺</div>
+    <h2>Nearby Specialist Doctors</h2>
+    <p class="service-subtitle">Choose a specialist and allow location access, or enter your city/PIN code. Results open in Google Maps; please verify credentials and availability directly.</p>
+    <div class="service-location-row"><input id="doctorArea" type="text" maxlength="100" placeholder="City, area or 6-digit PIN code"><button type="button" class="service-action" id="doctorUseLocation">📍 Use My Location</button></div>
+    <div class="service-link-list" id="doctorSpecialtyLinks">
+      <a class="service-link" data-specialty="ENT specialist" href="https://www.google.com/maps/search/ENT+specialist+near+me" target="_blank" rel="noopener noreferrer">ENT Specialist <span>↗</span></a>
+      <a class="service-link" data-specialty="Dermatologist" href="https://www.google.com/maps/search/Dermatologist+near+me" target="_blank" rel="noopener noreferrer">Dermatologist / Skin Specialist <span>↗</span></a>
+      <a class="service-link" data-specialty="Cardiologist" href="https://www.google.com/maps/search/Cardiologist+near+me" target="_blank" rel="noopener noreferrer">Cardiologist / Heart Specialist <span>↗</span></a>
+      <a class="service-link" data-specialty="Psychologist" href="https://www.google.com/maps/search/Psychologist+near+me" target="_blank" rel="noopener noreferrer">Psychologist / Mental Wellness <span>↗</span></a>
+      <a class="service-link" data-specialty="General physician" href="https://www.google.com/maps/search/General+physician+near+me" target="_blank" rel="noopener noreferrer">General Physician <span>↗</span></a>
+      <a class="service-link" data-specialty="Pediatrician" href="https://www.google.com/maps/search/Pediatrician+near+me" target="_blank" rel="noopener noreferrer">Pediatrician / Child Specialist <span>↗</span></a>
+    </div>
+    <p class="service-disclaimer">CompareMeds does not verify a doctor's registration, clinical quality, appointment availability or fees. Confirm details with the clinic. For emergencies, contact local emergency services.</p>
+  </div>
+</div>
+
+<!-- HEALTH INSURANCE POLICIES -->
+<div class="health-service-panel" id="insurancePanel">
+  <div class="health-service-card" style="background:linear-gradient(145deg,#fffaf2,#fff4e1);border-color:#efdfc1">
+    <div style="text-align:center;font-size:42px">🛡️</div>
+    <h2 style="color:#805716">Health Insurance Policies</h2>
+    <p class="service-subtitle">Explore official insurer pages and compare premium, sum insured, waiting periods, exclusions, co-pay and hospital network before choosing.</p>
+    <div class="insurance-list">
+      <div class="insurance-item"><h3>HDFC ERGO Health Insurance</h3><p>Review current health plans, coverage details, exclusions and premium quotations on the insurer's official site.</p><a href="https://www.hdfcergo.com/health-insurance" target="_blank" rel="noopener noreferrer">Explore HDFC ERGO ↗</a></div>
+      <div class="insurance-item"><h3>LIC Health Insurance</h3><p>Check the current health-related insurance offerings and eligibility on LIC's official site.</p><a href="https://licindia.in/" target="_blank" rel="noopener noreferrer">Explore LIC ↗</a></div>
+      <div class="insurance-item"><h3>Star Health Insurance</h3><p>Review policy benefits, waiting periods, room-rent limits, co-pay clauses and network hospitals.</p><a href="https://www.starhealth.in/" target="_blank" rel="noopener noreferrer">Explore Star Health ↗</a></div>
+      <div class="insurance-item"><h3>ICICI Lombard Health Insurance</h3><p>Check available plans, policy wording, cashless hospital network and current quotations.</p><a href="https://www.icicilombard.com/health-insurance" target="_blank" rel="noopener noreferrer">Explore ICICI Lombard ↗</a></div>
+      <div class="insurance-item"><h3>Niva Bupa Health Insurance</h3><p>Compare plan limits, exclusions, pre-existing disease waiting periods and premiums.</p><a href="https://www.nivabupa.com/" target="_blank" rel="noopener noreferrer">Explore Niva Bupa ↗</a></div>
+    </div>
+    <p class="service-disclaimer">No policy is automatically labelled “best value” because suitability depends on age, medical history, budget, coverage needs and policy terms. These are links to official insurer websites, not a ranking or financial advice.</p>
+  </div>
 </div>
 
 </main>
@@ -6982,6 +7063,44 @@ HTML = r"""
     const navLabScan = document.getElementById("navLabScan");
     const dietPanel = document.getElementById("dietPanel");
     const mainContentForNav = document.getElementById("mainContentForNav");
+    const specialistPanel = document.getElementById("specialistPanel");
+    const insurancePanel = document.getElementById("insurancePanel");
+    const openSpecialists = document.getElementById("openSpecialists");
+    const openInsurance = document.getElementById("openInsurance");
+
+    function clearServiceModes() {
+        document.body.classList.remove("specialist-mode", "insurance-mode");
+    }
+
+    function openServicePanel(mode) {
+        closeMedicalMenu();
+        document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode", "medishop-mode", "labscan-mode");
+        clearServiceModes();
+        document.body.classList.add(mode);
+        setActiveNav(navBuyMedi);
+        scrollToTopOfContent();
+    }
+
+    openSpecialists.addEventListener("click", function () { openServicePanel("specialist-mode"); });
+    openInsurance.addEventListener("click", function () { openServicePanel("insurance-mode"); });
+
+    const doctorArea = document.getElementById("doctorArea");
+    function updateDoctorLinks(locationText) {
+        const area = (locationText || doctorArea.value || "near me").trim();
+        document.querySelectorAll("#doctorSpecialtyLinks [data-specialty]").forEach(function (link) {
+            const specialty = link.getAttribute("data-specialty") || link.textContent.trim();
+            link.href = "https://www.google.com/maps/search/" + encodeURIComponent(specialty + " near " + area);
+        });
+    }
+    doctorArea.addEventListener("input", function () { updateDoctorLinks(doctorArea.value); });
+    document.getElementById("doctorUseLocation").addEventListener("click", function () {
+        if (!navigator.geolocation) { alert("Location is not supported by this browser. Enter your city or PIN code instead."); return; }
+        const button = this; button.disabled = true; button.textContent = "Finding location…";
+        navigator.geolocation.getCurrentPosition(function (position) {
+            const coords = position.coords.latitude.toFixed(5) + ", " + position.coords.longitude.toFixed(5);
+            doctorArea.value = coords; updateDoctorLinks(coords); button.disabled = false; button.textContent = "📍 Location Ready";
+        }, function () { button.disabled = false; button.textContent = "📍 Use My Location"; alert("Location access was not available. Please allow location permission or enter your city/PIN code."); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+    });
 
     function setActiveNav(button) {
         [navBuyMedi, navStepCounter, navDiet, navHospitals, navMediShop, navLabScan].forEach(function (item) {
@@ -6998,6 +7117,7 @@ HTML = r"""
 
     navBuyMedi.addEventListener("click", function () {
         closeMedicalMenu();
+        clearServiceModes();
         document.body.classList.remove("step-mode", "diet-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("buy-mode");
         mainContentForNav.classList.remove("buy-mode");
@@ -7010,6 +7130,7 @@ HTML = r"""
 
     navStepCounter.addEventListener("click", function () {
         closeMedicalMenu();
+        clearServiceModes();
         document.body.classList.remove("buy-mode", "diet-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("step-mode");
         setActiveNav(navStepCounter);
@@ -7019,6 +7140,7 @@ HTML = r"""
 
     navDiet.addEventListener("click", function () {
         closeMedicalMenu();
+        clearServiceModes();
         document.body.classList.remove("buy-mode", "step-mode", "hospital-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("diet-mode");
         setActiveNav(navDiet);
@@ -7028,6 +7150,7 @@ HTML = r"""
 
     navHospitals.addEventListener("click", function () {
         closeMedicalMenu();
+        clearServiceModes();
         document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "medishop-mode", "labscan-mode");
         document.body.classList.add("hospital-mode");
         setActiveNav(navHospitals);
@@ -7037,6 +7160,7 @@ HTML = r"""
 
     navMediShop.addEventListener("click", function () {
         closeMedicalMenu();
+        clearServiceModes();
         document.body.classList.remove("buy-mode", "step-mode", "diet-mode", "hospital-mode");
         document.body.classList.add("medishop-mode", "labscan-mode");
         setActiveNav(navMediShop);
