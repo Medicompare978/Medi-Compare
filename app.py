@@ -6361,7 +6361,7 @@ HTML = r"""
             // If no catalogue match exists, show the OCR text only when it is useful.
             // Never push weak/gibberish OCR directly into the medicine search.
             const medicineQuery = localQuery;
-            const strongEnough = !!top && top.score >= 9 && (top.hits >= 2 || top.bestConfidence >= 55);
+            const strongEnough = !!top && top.score >= 7 && (top.hits >= 1 || top.bestConfidence >= 45);
             if (!medicineQuery || !strongEnough) {
                 ocrResult.textContent = "Could not confidently identify a medicine from the available catalogue. Please retake a sharp, well-lit photo.";
                 ocrResult.classList.add("show");
@@ -8091,6 +8091,5 @@ if __name__ == "__main__":
         port=5000,
         debug=True,
     )
-
 
 
