@@ -303,6 +303,14 @@ def extract_image_url(product):
         "primaryImage",
         "image_link",
         "imageLink",
+        "product_image",
+        "productImage",
+        "product_images",
+        "image1",
+        "image_1",
+        "image_src",
+        "imageSrc",
+        "src",
     )
 
     def from_value(item):
@@ -325,7 +333,7 @@ def extract_image_url(product):
     if found:
         return found
 
-    for key in ("images", "image_urls", "imageUrls", "photos", "gallery"):
+    for key in ("images", "image_urls", "imageUrls", "photos", "gallery", "product_images", "productImages"):
         collection = product.get(key)
         if isinstance(collection, (list, tuple)):
             for item in collection:
@@ -1406,7 +1414,18 @@ def search_pharmeasy(query):
         print("PharmEasy HTTP status:", response.status_code)
 
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            parsed_products = get_products(data)
+            print("PharmEasy response top-level keys:", list(data.keys()) if isinstance(data, dict) else type(data).__name__)
+            print("PharmEasy parsed product count:", len(parsed_products))
+            if parsed_products:
+                sample = parsed_products[0]
+                print("PharmEasy first product keys:", list(sample.keys()))
+                print("PharmEasy first product image fields:", {
+                    key: sample.get(key) for key in ("images", "image_url", "image", "thumbnail", "product_images") if sample.get(key)
+                })
+                print("PharmEasy first product URL field present:", bool(extract_product_url(sample)))
+            return data
 
         print("PharmEasy error:", response.text[:500])
         return {"error": response.text, "status_code": response.status_code}
@@ -1717,10 +1736,14 @@ def fetch_medplus_products(query):
 
 def fetch_pharmeasy_products(query):
     result = search_pharmeasy(query)
-    if isinstance(result, dict) and result.get("status") == "success":
+    products = get_products(result)
+    # Parse providers may return a usable data/results array without a status="success" field.
+    if isinstance(result, dict) and (result.get("status") == "success" or products):
+        normalized = normalize_pharmeasy_products(products)
+        print("PharmEasy normalized products:", len(normalized), "with images:", sum(bool(p.get("image_url")) for p in normalized))
         return {
             "ok": True,
-            "products": normalize_pharmeasy_products(get_products(result)),
+            "products": normalized,
         }
 
     return {
@@ -8068,3 +8091,6 @@ if __name__ == "__main__":
         port=5000,
         debug=True,
     )
+
+
+
