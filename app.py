@@ -5959,8 +5959,8 @@ HTML = r"""
             cameraStream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: { ideal: "environment" },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 },
                 audio: false
             });
@@ -6002,7 +6002,7 @@ HTML = r"""
             return;
         }
 
-        const maxWidth = 1280;
+        const maxWidth = 1600;
         const scale = Math.min(1, maxWidth / cameraVideo.videoWidth);
         cameraCanvas.width = Math.round(cameraVideo.videoWidth * scale);
         cameraCanvas.height = Math.round(cameraVideo.videoHeight * scale);
@@ -6222,6 +6222,100 @@ HTML = r"""
     }
 
     async function runMedicineOCR() {
+        if (!capturedPhotoDataUrl) return;
+
+        clearOcrOutput();
+        cameraUsePhotoButton.disabled = true;
+        cameraRetakeButton.disabled = true;
+        cameraHint.textContent = "Reading the photo with Claude AI. Keep this window open…";
+        cameraResult.textContent = "Reading the prescription or medicine pack…";
+        cameraResult.classList.add("show");
+        setOcrProgress(35, "Claude AI is reading the photo…");
+
+        let scan = null;
+        try {
+            const response = await fetch("/api/scan-medicine", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ image: capturedPhotoDataUrl })
+            });
+            if (response.ok) {
+                scan = await response.json();
+            } else {
+                console.warn("Claude scan unavailable, status:", response.status);
+            }
+        } catch (scanError) {
+            console.warn("Claude scan failed:", scanError);
+        }
+
+        if (!scan || !scan.ok || !Array.isArray(scan.medicines) || !scan.medicines.length) {
+            // Claude scan unavailable or found nothing: use the built-in OCR.
+            cameraHint.textContent = "Claude scan was not available. Trying the built-in OCR…";
+            cameraUsePhotoButton.disabled = false;
+            cameraRetakeButton.disabled = false;
+            return runTesseractOCR();
+        }
+
+        // Do not leave an older server-side search visually mixed with a new scan.
+        document.querySelectorAll(".search-title, .pharmacy-section, .compare-prices-section").forEach(function (el) {
+            el.dataset.ocrHidden = "1";
+            el.style.display = "none";
+        });
+
+        const matchList = document.getElementById("ocrMatchList");
+        matchList.innerHTML = "";
+
+        scan.medicines.slice(0, 20).forEach(function (med) {
+            const strengthText = med.strength && med.name.toLowerCase().indexOf(med.strength.toLowerCase()) === -1
+                ? " " + med.strength
+                : "";
+            const searchText = (med.name + strengthText).trim();
+
+            const card = document.createElement("div");
+            card.className = "ocr-match-card";
+            const name = document.createElement("div");
+            name.className = "ocr-match-name";
+            name.textContent = searchText;
+            const meta = document.createElement("div");
+            meta.className = "ocr-match-meta";
+            meta.textContent = [med.form, med.dose, med.frequency, med.duration].filter(Boolean).join(" • ");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "ocr-match-button";
+            button.textContent = "Search this medicine";
+            button.addEventListener("click", function () {
+                medicineInput.value = searchText;
+                updateClearButton();
+                closeCamera();
+                medicineInput.focus();
+            });
+            card.appendChild(name);
+            if (meta.textContent) card.appendChild(meta);
+            card.appendChild(button);
+            matchList.appendChild(card);
+        });
+        matchList.classList.add("show");
+
+        let notice = "Read by Claude AI. Please check every medicine name, strength and dose against the original before searching.";
+        if (Array.isArray(scan.unclear) && scan.unclear.length) {
+            notice += " Unclear: " + scan.unclear.join("; ");
+        }
+        ocrResult.textContent = notice;
+        ocrResult.classList.add("show");
+
+        if (scan.raw_text) {
+            ocrText.textContent = scan.raw_text;
+            ocrText.classList.add("show");
+        }
+
+        cameraHint.textContent = "Choose a medicine to search. We will not search until you confirm.";
+        cameraResult.textContent = "Scan complete. Verify the result.";
+        setOcrProgress(100, "Claude AI scan complete");
+        cameraUsePhotoButton.disabled = false;
+        cameraRetakeButton.disabled = false;
+    }
+
+    async function runTesseractOCR() {
         if (!capturedPhotoDataUrl) return;
 
         clearOcrOutput();
@@ -7772,6 +7866,171 @@ def ocr_match():
 
     results.sort(key=lambda item: item["score"], reverse=True)
     return {"matches": results[:8]}
+
+
+# ============================================================
+# CLAUDE VISION SCAN (prescriptions + medicine boxes/strips)
+# ============================================================
+# The browser sends the captured photo here. The server calls the Claude API,
+# so ANTHROPIC_API_KEY stays on the server and is never sent to the browser.
+# If the key is missing or the call fails, the browser falls back to Tesseract.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+CLAUDE_SCAN_MODEL = os.getenv("CLAUDE_SCAN_MODEL", "claude-sonnet-5-5")
+CLAUDE_SCAN_MAX_PER_HOUR = int(os.getenv("CLAUDE_SCAN_MAX_PER_HOUR", "15"))
+CLAUDE_SCAN_MAX_IMAGE_BYTES = 6 * 1024 * 1024
+print("Claude scan key loaded:", bool(ANTHROPIC_API_KEY))
+
+_scan_hits = {}
+_scan_lock = threading.Lock()
+
+CLAUDE_SCAN_PROMPT = (
+    "You read photos of medical prescriptions and medicine boxes or strips. "
+    "Transcribe exactly what is written or printed. Never guess. "
+    "If a word, name, strength or dose is not clearly readable, do not invent it; "
+    "leave that field empty and describe the problem in the unclear list. "
+    "Do not add medical advice and do not add medicines that are not in the photo. "
+    "The text may be English or Telugu; keep the original language in raw_text. "
+    "Reply with JSON only, no markdown, in exactly this shape: "
+    '{"document_type":"prescription or medicine_pack or other",'
+    '"medicines":[{"name":"","strength":"","form":"","dose":"","frequency":"","duration":""}],'
+    '"raw_text":"full transcription, line by line","unclear":["short notes"]}. '
+    "Use empty strings for missing fields."
+)
+
+
+def _scan_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _scan_rate_limited(ip):
+    now = time.time()
+    with _scan_lock:
+        hits = [t for t in _scan_hits.get(ip, []) if now - t < 3600]
+        if len(hits) >= CLAUDE_SCAN_MAX_PER_HOUR:
+            _scan_hits[ip] = hits
+            return True
+        hits.append(now)
+        _scan_hits[ip] = hits
+        return False
+
+
+def _scan_text(value, limit=160):
+    return " ".join(str(value or "").split())[:limit]
+
+
+@app.route("/api/scan-medicine", methods=["POST"])
+def scan_medicine():
+    """Read a prescription or medicine pack photo with Claude vision."""
+    if not ANTHROPIC_API_KEY:
+        return {"ok": False, "error": "not_configured"}, 503
+
+    payload = request.get_json(silent=True) or {}
+    image = str(payload.get("image") or "").strip()
+    media_type = "image/jpeg"
+    if image.startswith("data:"):
+        header, _, image = image.partition(",")
+        declared = header[5:].split(";")[0]
+        if declared in ("image/jpeg", "image/png", "image/webp"):
+            media_type = declared
+    image = image.strip()
+
+    if not image:
+        return {"ok": False, "error": "no_image"}, 400
+    if len(image) > CLAUDE_SCAN_MAX_IMAGE_BYTES * 4 // 3:
+        return {"ok": False, "error": "image_too_large"}, 413
+    try:
+        base64.b64decode(image, validate=True)
+    except Exception:
+        return {"ok": False, "error": "bad_image"}, 400
+
+    if _scan_rate_limited(_scan_client_ip()):
+        return {"ok": False, "error": "rate_limited"}, 429
+
+    body = {
+        "model": CLAUDE_SCAN_MODEL,
+        "max_tokens": 2000,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": image,
+                        },
+                    },
+                    {"type": "text", "text": CLAUDE_SCAN_PROMPT},
+                ],
+            }
+        ],
+    }
+
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=body,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        # Never log the key or the image.
+        print("Claude scan request failed:", type(exc).__name__)
+        return {"ok": False, "error": "upstream_unreachable"}, 502
+
+    if response.status_code != 200:
+        print("Claude scan HTTP status:", response.status_code)
+        return {"ok": False, "error": "upstream_error"}, 502
+
+    try:
+        data = response.json()
+        text = "".join(
+            block.get("text", "")
+            for block in data.get("content", [])
+            if block.get("type") == "text"
+        )
+        parsed = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    except Exception:
+        print("Claude scan: could not parse the model reply")
+        return {"ok": False, "error": "bad_reply"}, 502
+
+    medicines = []
+    for item in (parsed.get("medicines") or [])[:30]:
+        if not isinstance(item, dict):
+            continue
+        name = _scan_text(item.get("name"))
+        if not name:
+            continue
+        medicines.append(
+            {
+                "name": name,
+                "strength": _scan_text(item.get("strength"), 60),
+                "form": _scan_text(item.get("form"), 60),
+                "dose": _scan_text(item.get("dose"), 80),
+                "frequency": _scan_text(item.get("frequency"), 80),
+                "duration": _scan_text(item.get("duration"), 80),
+            }
+        )
+
+    unclear = [
+        _scan_text(u, 200) for u in (parsed.get("unclear") or [])[:10] if u
+    ]
+
+    return {
+        "ok": True,
+        "document_type": _scan_text(parsed.get("document_type"), 30),
+        "medicines": medicines,
+        "raw_text": str(parsed.get("raw_text") or "")[:4000],
+        "unclear": unclear,
+    }
 
 
 @app.route("/image-proxy", methods=["GET"])
