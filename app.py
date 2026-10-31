@@ -8352,3 +8352,106 @@ if __name__ == "__main__":
     )
 
 
+# ============================================================
+# V13.6 UPDATE NOTES — OCR / PHARMEASY DIAGNOSTICS
+# ============================================================
+# 1) PharmEasy image extraction accepts additional image field aliases and arrays.
+# 2) Fresh PharmEasy API responses log only response keys, product keys, image-field
+#    values, product URL presence, product count and normalized image count. API key
+#    and authorization headers are never logged.
+# 3) PharmEasy fetch accepts valid products from a data/results/items envelope even
+#    when the provider omits status="success". This avoids discarding usable products.
+# 4) Existing Apollo, MedPlus, Tata 1mg, Netmeds, Step Counter V10.1, Camera, OCR,
+#    navigation, Diet/PDF, hospitals, medishop, labs/scans and API shield remain
+#    otherwise unchanged.
+# 5) OCR remains browser-side Tesseract.js. It does not upload camera images to a
+#    third-party OCR service. Internet-loaded OCR model/data alone cannot guarantee
+#    medicine-label accuracy; test on real medicine boxes/strips and verify the
+#    recognized medicine, strength and pack before searching.
+#
+# TEST / GIT HANDOFF
+#   python -m py_compile app.py
+#   python app.py
+#   # Test a fresh PharmEasy query; inspect terminal lines beginning PharmEasy.
+#   git add app.py requirements.txt
+#   git commit -m "Improve PharmEasy image extraction and OCR diagnostics"
+#   git push origin main
+# ============================================================
+
+
+# ============================================================
+# V13.7 OCR ACCEPTANCE UPDATE
+# ============================================================
+# Based on user's real camera tests: DOLO 650 and CIPLA recognized correctly;
+# SARIDON and PARACETAMOL were sometimes recognized but did not proceed.
+# Lowered the final OCR text acceptance threshold slightly. This does NOT bypass
+# the saved-catalogue match step and does NOT auto-buy or auto-search. The user
+# still verifies the medicine text before submitting a search.
+# If OCR text is not confidently readable, the app continues to ask for a retake.
+# PharmEasy image diagnostics and Apollo Buy link remain from V13.6.
+#
+# TEST LOCALLY BEFORE PUSH:
+#   python -m py_compile app.py
+#   python app.py
+#   # Camera: test DOLO 650, CIPLA, SARIDON, PARACETAMOL separately.
+#   # Verify the recognized text is populated and manually confirm before Search.
+#
+# GIT COMMANDS (copy one line at a time in PowerShell):
+#   git add app.py requirements.txt
+#   git commit -m "Improve OCR recognition acceptance and PharmEasy diagnostics"
+#   git push origin main
+# ============================================================
+
+
+# ============================================================
+# V13.8 CLAUDE VISION SCAN UPDATE
+# ============================================================
+# 1) New server route /api/scan-medicine reads prescriptions AND medicine
+#    boxes/strips with the Claude API (model claude-sonnet-5-5 by default).
+# 2) The camera now tries Claude first. If the key is missing, the call fails,
+#    or nothing is found, it automatically falls back to the old browser-side
+#    Tesseract OCR (V13.7 behaviour, unchanged).
+# 3) Prescriptions can list several medicines. Each one gets a
+#    "Search this medicine" button. Nothing is searched automatically.
+# 4) Camera capture is slightly sharper (1920x1080 request, 1600 px photo) so
+#    handwriting is easier to read.
+# 5) Safety: the key stays on the server, it is never logged, images are not
+#    stored, photos over 6 MB are rejected, and each visitor IP is limited to
+#    15 scans per hour (CLAUDE_SCAN_MAX_PER_HOUR). Counters reset when Render
+#    restarts the service.
+# 6) No new Python packages are needed (uses requests, already in the app).
+#    requirements.txt does NOT change.
+# 7) Handwriting can still be misread. The page tells the user to verify every
+#    medicine name and dose. Photos are sent to Anthropic for reading, so add
+#    this to the CompareMeds privacy policy.
+#
+# ONE-TIME SETUP
+#   a) Create an API key at console.anthropic.com (separate from the Claude app
+#      subscription; billed per scan). Set a monthly spend limit there.
+#   b) Local: add this line to your .env file (never commit .env):
+#        ANTHROPIC_API_KEY=your_key_here
+#   c) Render: Dashboard > your service > Environment > Add Environment Variable
+#        Key: ANTHROPIC_API_KEY    Value: your_key_here   > Save Changes
+#      (Render redeploys automatically.)
+#
+# TEST LOCALLY BEFORE PUSH (PowerShell)
+#   python -m py_compile app.py
+#   python app.py
+#   # Open http://127.0.0.1:5000 on your phone/laptop, open the camera, scan a
+#   # printed strip, a typed prescription and a handwritten prescription.
+#   # Terminal should show: Claude scan key loaded: True
+#   # To test the fallback: remove the key from .env, restart, scan again.
+#
+# GIT COMMANDS (copy one line at a time in PowerShell)
+#   git status
+#   git add app.py
+#   git commit -m "Add Claude vision scan for prescriptions with Tesseract fallback"
+#   git push origin main
+#   # Render auto-deploys from GitHub. Watch Render > Logs until it says live,
+#   # then test the camera on the https:// Render URL (camera needs HTTPS).
+#
+# IF SOMETHING GOES WRONG
+#   - Camera scans fall back to old OCR: check the ANTHROPIC_API_KEY name/value
+#     in Render, then Logs for "Claude scan HTTP status".
+#   - Roll back: git revert HEAD  then  git push origin main
+# ============================================================
