@@ -6227,10 +6227,10 @@ HTML = r"""
         clearOcrOutput();
         cameraUsePhotoButton.disabled = true;
         cameraRetakeButton.disabled = true;
-        cameraHint.textContent = "Reading the photo with Claude AI. Keep this window open…";
-        cameraResult.textContent = "Reading the prescription or medicine pack…";
+        cameraHint.textContent = "Reading the photo with AI. Keep this window open…";
+        cameraResult.textContent = "Looking for medicine names…";
         cameraResult.classList.add("show");
-        setOcrProgress(35, "Claude AI is reading the photo…");
+        setOcrProgress(35, "AI is reading the photo…");
 
         let scan = null;
         try {
@@ -6242,61 +6242,77 @@ HTML = r"""
             if (response.ok) {
                 scan = await response.json();
             } else {
-                console.warn("Claude scan unavailable, status:", response.status);
+                console.warn("AI scan unavailable, status:", response.status);
             }
         } catch (scanError) {
-            console.warn("Claude scan failed:", scanError);
+            console.warn("AI scan failed:", scanError);
         }
 
-        if (!scan || !scan.ok || !Array.isArray(scan.medicines) || !scan.medicines.length) {
-            // Claude scan unavailable or found nothing: use the built-in OCR.
-            cameraHint.textContent = "Claude scan was not available. Trying the built-in OCR…";
+        if (!scan || !scan.ok) {
+            // The AI service itself was unavailable: use the basic built-in OCR.
+            cameraHint.textContent = "AI scan was not available. Trying the basic built-in OCR…";
             cameraUsePhotoButton.disabled = false;
             cameraRetakeButton.disabled = false;
             return runTesseractOCR();
         }
 
-        // Do not leave an older server-side search visually mixed with a new scan.
-        document.querySelectorAll(".search-title, .pharmacy-section, .compare-prices-section").forEach(function (el) {
-            el.dataset.ocrHidden = "1";
-            el.style.display = "none";
-        });
-
         const matchList = document.getElementById("ocrMatchList");
         matchList.innerHTML = "";
+        matchList.classList.remove("show");
+
+        if (!Array.isArray(scan.medicines) || !scan.medicines.length) {
+            ocrResult.textContent = "No medicine name was found in this photo. Retake it with only the medicine name or prescription in view, straight-on and well lit.";
+            ocrResult.classList.add("show");
+            cameraHint.textContent = "Tip: avoid screens, menus and background writing.";
+            cameraResult.textContent = "No medicine found.";
+            setOcrProgress(100, "Scan complete: no medicine found");
+            cameraUsePhotoButton.disabled = false;
+            cameraRetakeButton.disabled = false;
+            return;
+        }
 
         scan.medicines.slice(0, 20).forEach(function (med) {
             const strengthText = med.strength && med.name.toLowerCase().indexOf(med.strength.toLowerCase()) === -1
                 ? " " + med.strength
                 : "";
-            const searchText = (med.name + strengthText).trim();
 
             const card = document.createElement("div");
             card.className = "ocr-match-card";
-            const name = document.createElement("div");
-            name.className = "ocr-match-name";
-            name.textContent = searchText;
+
+            const nameInput = document.createElement("input");
+            nameInput.type = "text";
+            nameInput.value = (med.name + strengthText).trim();
+            nameInput.setAttribute("aria-label", "Medicine name (you can correct it)");
+            nameInput.className = "ocr-match-name";
+            nameInput.style.cssText = "width:100%;border:1px solid #cfe3dc;border-radius:10px;padding:8px 10px;font:inherit;font-weight:900;";
+
             const meta = document.createElement("div");
             meta.className = "ocr-match-meta";
-            meta.textContent = [med.form, med.dose, med.frequency, med.duration].filter(Boolean).join(" • ");
+            const details = [med.form, med.dose, med.frequency, med.duration].filter(Boolean).join(" • ");
+            const warning = med.confidence === "high" ? "" : "Hard to read, please check carefully. ";
+            meta.textContent = (warning + details).trim();
+
             const button = document.createElement("button");
             button.type = "button";
             button.className = "ocr-match-button";
             button.textContent = "Search this medicine";
             button.addEventListener("click", function () {
-                medicineInput.value = searchText;
+                const finalName = nameInput.value.trim();
+                if (!finalName) return;
+                medicineInput.value = finalName;
                 updateClearButton();
                 closeCamera();
                 medicineInput.focus();
             });
-            card.appendChild(name);
+
+            card.appendChild(nameInput);
             if (meta.textContent) card.appendChild(meta);
             card.appendChild(button);
             matchList.appendChild(card);
         });
         matchList.classList.add("show");
 
-        let notice = "Read by Claude AI. Please check every medicine name, strength and dose against the original before searching.";
+        let notice = "Read by AI. Check each name, correct it if needed, then tap Search. We never search until you confirm.";
         if (Array.isArray(scan.unclear) && scan.unclear.length) {
             notice += " Unclear: " + scan.unclear.join("; ");
         }
@@ -6308,9 +6324,9 @@ HTML = r"""
             ocrText.classList.add("show");
         }
 
-        cameraHint.textContent = "Choose a medicine to search. We will not search until you confirm.";
+        cameraHint.textContent = "Choose a medicine to search.";
         cameraResult.textContent = "Scan complete. Verify the result.";
-        setOcrProgress(100, "Claude AI scan complete");
+        setOcrProgress(100, "AI scan complete");
         cameraUsePhotoButton.disabled = false;
         cameraRetakeButton.disabled = false;
     }
@@ -6464,18 +6480,11 @@ HTML = r"""
                 return;
             }
 
-            medicineInput.value = medicineQuery;
-            updateClearButton();
-            ocrResult.textContent = "OCR text: " + medicineQuery + " — please correct/verify it before searching.";
+            ocrResult.textContent = "Basic OCR read: " + medicineQuery + ". This is not reliable, so it was NOT put in the search box. Retake the photo or type the name yourself.";
             ocrResult.classList.add("show");
-            cameraHint.textContent = "No saved catalogue match was found. Verify the OCR text before searching.";
-            cameraResult.textContent = "OCR completed — please verify the result.";
-            setOcrProgress(100, "OCR complete");
-
-            setTimeout(function () {
-                closeCamera();
-                medicineInput.focus();
-            }, 900);
+            cameraHint.textContent = "The AI scan was unavailable, so only basic OCR ran.";
+            cameraResult.textContent = "Basic OCR only. Please verify.";
+            setOcrProgress(100, "Basic OCR complete (not auto-filled)");
         } catch (error) {
             console.error("OCR error:", error);
             setOcrProgress(0, "OCR failed. Please retake a clearer medicine photo and try again.");
@@ -7869,32 +7878,44 @@ def ocr_match():
 
 
 # ============================================================
-# CLAUDE VISION SCAN (prescriptions + medicine boxes/strips)
+# AI PHOTO SCAN (prescriptions + medicine boxes/strips)
 # ============================================================
-# The browser sends the captured photo here. The server calls the Claude API,
-# so ANTHROPIC_API_KEY stays on the server and is never sent to the browser.
-# If the key is missing or the call fails, the browser falls back to Tesseract.
+# The browser sends the captured photo here. The server calls a vision AI, so the
+# API key stays on the server and is never sent to the browser.
+#   GEMINI_API_KEY    -> Google Gemini (has a free tier from aistudio.google.com)
+#   ANTHROPIC_API_KEY -> Claude (paid, prepaid credits)
+# If both are set, SCAN_PROVIDER decides who goes first (default: gemini).
+# If neither works, the browser falls back to Tesseract (basic OCR).
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_SCAN_MODEL = os.getenv("GEMINI_SCAN_MODEL", "gemini-2.5-flash")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_SCAN_MODEL = os.getenv("CLAUDE_SCAN_MODEL", "claude-sonnet-5-5")
-CLAUDE_SCAN_MAX_PER_HOUR = int(os.getenv("CLAUDE_SCAN_MAX_PER_HOUR", "15"))
-CLAUDE_SCAN_MAX_IMAGE_BYTES = 6 * 1024 * 1024
-print("Claude scan key loaded:", bool(ANTHROPIC_API_KEY))
+SCAN_PROVIDER = os.getenv("SCAN_PROVIDER", "gemini").lower()
+SCAN_MAX_PER_HOUR = int(os.getenv("SCAN_MAX_PER_HOUR", os.getenv("CLAUDE_SCAN_MAX_PER_HOUR", "15")))
+SCAN_MAX_IMAGE_BYTES = 6 * 1024 * 1024
+print("Scan keys loaded -> gemini:", bool(GEMINI_API_KEY), "| claude:", bool(ANTHROPIC_API_KEY))
 
 _scan_hits = {}
 _scan_lock = threading.Lock()
 
-CLAUDE_SCAN_PROMPT = (
-    "You read photos of medical prescriptions and medicine boxes or strips. "
-    "Transcribe exactly what is written or printed. Never guess. "
-    "If a word, name, strength or dose is not clearly readable, do not invent it; "
-    "leave that field empty and describe the problem in the unclear list. "
-    "Do not add medical advice and do not add medicines that are not in the photo. "
-    "The text may be English or Telugu; keep the original language in raw_text. "
+SCAN_PROMPT = (
+    "You read photos of medical prescriptions and of medicine boxes, strips or bottles. "
+    "Your ONLY job is to list medicine names (tablets, capsules, syrups, injections, drops, creams, etc.). "
+    "IGNORE everything that is not a medicine: computer or phone screen text, menus such as File Edit View, "
+    "buttons, headings, patient / doctor / hospital names, addresses, dates, phone numbers, page numbers, "
+    "notes, maths or any other writing. If the photo contains no medicine name, return an empty medicines list. "
+    "Transcribe each medicine exactly as written. Never guess or complete a name you cannot read; "
+    "if you cannot read it, leave it out and mention it in unclear. "
+    "Handwriting is common. Doctors use abbreviations: Tab = tablet, Cap = capsule, Syp = syrup, Inj = injection, "
+    "BD or BID = twice a day, TDS or TID = three times a day, OD = once a day, HS = bedtime, 1-0-1 = morning and night. "
+    "A number next to a medicine may be a quantity; put it in dose only if it is clearly a dose. "
+    "The text may be English or Telugu. "
+    "For every medicine give confidence: high (clearly readable), medium (probably right), low (hard to read). "
     "Reply with JSON only, no markdown, in exactly this shape: "
     '{"document_type":"prescription or medicine_pack or other",'
-    '"medicines":[{"name":"","strength":"","form":"","dose":"","frequency":"","duration":""}],'
-    '"raw_text":"full transcription, line by line","unclear":["short notes"]}. '
-    "Use empty strings for missing fields."
+    '"medicines":[{"name":"","strength":"","form":"","dose":"","frequency":"","duration":"","confidence":"high or medium or low"}],'
+    '"raw_text":"only the medicine lines you read, one per line","unclear":["short notes"]}. '
+    "Use empty strings for missing fields. Do not give medical advice."
 )
 
 
@@ -7909,7 +7930,7 @@ def _scan_rate_limited(ip):
     now = time.time()
     with _scan_lock:
         hits = [t for t in _scan_hits.get(ip, []) if now - t < 3600]
-        if len(hits) >= CLAUDE_SCAN_MAX_PER_HOUR:
+        if len(hits) >= SCAN_MAX_PER_HOUR:
             _scan_hits[ip] = hits
             return True
         hits.append(now)
@@ -7921,10 +7942,113 @@ def _scan_text(value, limit=160):
     return " ".join(str(value or "").split())[:limit]
 
 
+def _scan_providers():
+    available = []
+    if GEMINI_API_KEY:
+        available.append("gemini")
+    if ANTHROPIC_API_KEY:
+        available.append("claude")
+    if SCAN_PROVIDER in available:
+        return [SCAN_PROVIDER] + [p for p in available if p != SCAN_PROVIDER]
+    return available
+
+
+def _scan_with_gemini(image, media_type):
+    """Return the model's text, or None if the call failed. Never logs key or image."""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % GEMINI_SCAN_MODEL
+    body = {
+        "contents": [
+            {
+                "parts": [
+                    {"inline_data": {"mime_type": media_type, "data": image}},
+                    {"text": SCAN_PROMPT},
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "responseMimeType": "application/json",
+            "maxOutputTokens": 4000,
+        },
+    }
+    try:
+        response = requests.post(
+            url,
+            headers={"x-goog-api-key": GEMINI_API_KEY, "content-type": "application/json"},
+            json=body,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        print("Gemini scan request failed:", type(exc).__name__)
+        return None
+    if response.status_code != 200:
+        print("Gemini scan HTTP status:", response.status_code)
+        return None
+    try:
+        data = response.json()
+        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts)
+    except Exception:
+        print("Gemini scan: unexpected reply shape")
+        return None
+
+
+def _scan_with_claude(image, media_type):
+    """Return the model's text, or None if the call failed. Never logs key or image."""
+    body = {
+        "model": CLAUDE_SCAN_MODEL,
+        "max_tokens": 2000,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image}},
+                    {"type": "text", "text": SCAN_PROMPT},
+                ],
+            }
+        ],
+    }
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=body,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        print("Claude scan request failed:", type(exc).__name__)
+        return None
+    if response.status_code != 200:
+        print("Claude scan HTTP status:", response.status_code)
+        return None
+    try:
+        data = response.json()
+        return "".join(
+            block.get("text", "")
+            for block in data.get("content", [])
+            if block.get("type") == "text"
+        )
+    except Exception:
+        print("Claude scan: unexpected reply shape")
+        return None
+
+
+def _scan_parse(text):
+    try:
+        return json.loads(text[text.index("{"): text.rindex("}") + 1])
+    except Exception:
+        return None
+
+
 @app.route("/api/scan-medicine", methods=["POST"])
 def scan_medicine():
-    """Read a prescription or medicine pack photo with Claude vision."""
-    if not ANTHROPIC_API_KEY:
+    """Read a prescription or medicine pack photo with a vision AI."""
+    providers = _scan_providers()
+    if not providers:
         return {"ok": False, "error": "not_configured"}, 503
 
     payload = request.get_json(silent=True) or {}
@@ -7939,7 +8063,7 @@ def scan_medicine():
 
     if not image:
         return {"ok": False, "error": "no_image"}, 400
-    if len(image) > CLAUDE_SCAN_MAX_IMAGE_BYTES * 4 // 3:
+    if len(image) > SCAN_MAX_IMAGE_BYTES * 4 // 3:
         return {"ok": False, "error": "image_too_large"}, 413
     try:
         base64.b64decode(image, validate=True)
@@ -7949,66 +8073,31 @@ def scan_medicine():
     if _scan_rate_limited(_scan_client_ip()):
         return {"ok": False, "error": "rate_limited"}, 429
 
-    body = {
-        "model": CLAUDE_SCAN_MODEL,
-        "max_tokens": 2000,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image,
-                        },
-                    },
-                    {"type": "text", "text": CLAUDE_SCAN_PROMPT},
-                ],
-            }
-        ],
-    }
+    parsed = None
+    used = ""
+    for provider in providers:
+        text = _scan_with_gemini(image, media_type) if provider == "gemini" else _scan_with_claude(image, media_type)
+        if not text:
+            continue
+        parsed = _scan_parse(text)
+        if parsed is not None:
+            used = provider
+            break
+        print("Scan: could not parse the", provider, "reply")
 
-    try:
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json=body,
-            timeout=60,
-        )
-    except requests.RequestException as exc:
-        # Never log the key or the image.
-        print("Claude scan request failed:", type(exc).__name__)
-        return {"ok": False, "error": "upstream_unreachable"}, 502
-
-    if response.status_code != 200:
-        print("Claude scan HTTP status:", response.status_code)
+    if parsed is None:
         return {"ok": False, "error": "upstream_error"}, 502
-
-    try:
-        data = response.json()
-        text = "".join(
-            block.get("text", "")
-            for block in data.get("content", [])
-            if block.get("type") == "text"
-        )
-        parsed = json.loads(text[text.index("{"): text.rindex("}") + 1])
-    except Exception:
-        print("Claude scan: could not parse the model reply")
-        return {"ok": False, "error": "bad_reply"}, 502
 
     medicines = []
     for item in (parsed.get("medicines") or [])[:30]:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or item.get("is_medicine") is False:
             continue
         name = _scan_text(item.get("name"))
         if not name:
             continue
+        confidence = _scan_text(item.get("confidence"), 10).lower()
+        if confidence not in ("high", "medium", "low"):
+            confidence = "medium"
         medicines.append(
             {
                 "name": name,
@@ -8017,15 +8106,15 @@ def scan_medicine():
                 "dose": _scan_text(item.get("dose"), 80),
                 "frequency": _scan_text(item.get("frequency"), 80),
                 "duration": _scan_text(item.get("duration"), 80),
+                "confidence": confidence,
             }
         )
 
-    unclear = [
-        _scan_text(u, 200) for u in (parsed.get("unclear") or [])[:10] if u
-    ]
+    unclear = [_scan_text(u, 200) for u in (parsed.get("unclear") or [])[:10] if u]
 
     return {
         "ok": True,
+        "provider": used,
         "document_type": _scan_text(parsed.get("document_type"), 30),
         "medicines": medicines,
         "raw_text": str(parsed.get("raw_text") or "")[:4000],
@@ -8454,4 +8543,51 @@ if __name__ == "__main__":
 #   - Camera scans fall back to old OCR: check the ANTHROPIC_API_KEY name/value
 #     in Render, then Logs for "Claude scan HTTP status".
 #   - Roll back: git revert HEAD  then  git push origin main
+# ============================================================
+
+
+# ============================================================
+# V13.9 FREE GEMINI SCAN + MEDICINE-ONLY UPDATE
+# ============================================================
+# What changed from V13.8
+#  1) /api/scan-medicine now supports Google Gemini (free tier) as well as Claude.
+#     Gemini is tried first when GEMINI_API_KEY is set. Claude is used if its
+#     key is set (as a backup, or alone). SCAN_PROVIDER=claude flips the order.
+#  2) The AI is told to list MEDICINE NAMES ONLY and to ignore menus, screen
+#     text, headings, names, dates and other writing. If no medicine is found,
+#     the page says "No medicine found, retake" and does NOT fall back to
+#     Tesseract, so no more "File Edit View" in the search box.
+#  3) Each medicine card has an editable name box and a "hard to read" warning
+#     for medium/low confidence. Nothing is searched until the user taps Search.
+#  4) Tesseract now runs ONLY when the AI service is unavailable (no key, error,
+#     rate limit). Even then, weak OCR text is no longer auto-filled into the
+#     search box; the user is told to retake or type it.
+#  5) Removed a V13.8 line that hid page sections after a scan (not needed).
+#  6) requirements.txt does NOT change (uses requests, already installed).
+#
+# ENVIRONMENT VARIABLES (Render > Environment, and .env locally)
+#   GEMINI_API_KEY      your key from aistudio.google.com (free tier)
+#   GEMINI_SCAN_MODEL   optional, default gemini-2.5-flash. If logs show
+#                       "Gemini scan HTTP status: 404", set this to a current
+#                       Flash model name shown in AI Studio.
+#   ANTHROPIC_API_KEY   optional backup (paid)
+#   SCAN_PROVIDER       optional: gemini (default) or claude
+#   SCAN_MAX_PER_HOUR   optional, default 15 scans per visitor IP per hour
+#
+# PRIVACY (important for a medical site)
+#   Gemini FREE tier: Google may use the photos to improve its products. Use it
+#   only for testing with your own handwriting. Before real users upload real
+#   prescriptions, move to a paid plan (Gemini paid or Claude) and describe this
+#   in the CompareMeds privacy policy. Images are not stored by this app.
+#
+# CHECK AFTER DEPLOY (Render > Logs)
+#   Scan keys loaded -> gemini: True | claude: False
+#   Gemini scan HTTP status: 400/403 -> key problem; 404 -> model name; 429 -> free limit
+#
+# GIT (PowerShell, one line at a time)
+#   python -m py_compile app.py
+#   git status
+#   git add app.py
+#   git commit -m "Add free Gemini scan, medicine-only reading, safer OCR fallback"
+#   git push origin main
 # ============================================================
