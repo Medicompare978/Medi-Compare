@@ -1989,6 +1989,31 @@ HTML = r"""
             min-width: 0;
         }
 
+        .suggest-box {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 6px);
+            background: #ffffff;
+            border: 1px solid #d9e6e1;
+            border-radius: 14px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+            overflow: hidden;
+            z-index: 40;
+            text-align: left;
+        }
+        .suggest-box.show { display: block; }
+        .suggest-item {
+            padding: 12px 16px;
+            font-size: 16px;
+            color: #0b4f3a;
+            cursor: pointer;
+            border-bottom: 1px solid #eef3f1;
+        }
+        .suggest-item:last-child { border-bottom: 0; }
+        .suggest-item:hover, .suggest-item:active { background: #e9f7f1; }
+
         .search-wrapper::before {
             content: "🔍";
             position: absolute;
@@ -4692,6 +4717,8 @@ HTML = r"""
             title="Scan medicine with camera"
         >📷</button>
 
+        <div class="suggest-box" id="suggestBox" role="listbox" aria-label="Spelling suggestions"></div>
+
     </div>
 
     <button type="submit">
@@ -5844,8 +5871,71 @@ HTML = r"""
 
     updateClearButton();
 
+    // ============================================================
+    // SEARCH SUGGESTIONS (spelling help under the search box)
+    // ============================================================
+    (function () {
+        const box = document.getElementById("suggestBox");
+        if (!box) return;
+        let timer = null;
+        let requestId = 0;
 
+        function hideSuggestions() {
+            box.innerHTML = "";
+            box.classList.remove("show");
+        }
 
+        function showSuggestions(items) {
+            box.innerHTML = "";
+            if (!items.length) {
+                box.classList.remove("show");
+                return;
+            }
+            items.forEach(function (text) {
+                const row = document.createElement("div");
+                row.className = "suggest-item";
+                row.setAttribute("role", "option");
+                row.textContent = text;
+                // pointerdown fires before the input loses focus, so the tap is never lost.
+                row.addEventListener("pointerdown", function (event) {
+                    event.preventDefault();
+                    medicineInput.value = text;
+                    updateClearButton();
+                    hideSuggestions();
+                    medicineInput.focus();
+                });
+                box.appendChild(row);
+            });
+            box.classList.add("show");
+        }
+
+        medicineInput.addEventListener("input", function () {
+            const q = medicineInput.value.trim();
+            clearTimeout(timer);
+            if (q.length < 3) {
+                hideSuggestions();
+                return;
+            }
+            timer = setTimeout(function () {
+                const id = ++requestId;
+                fetch("/api/suggest?q=" + encodeURIComponent(q))
+                    .then(function (response) { return response.ok ? response.json() : { suggestions: [] }; })
+                    .then(function (data) {
+                        if (id === requestId && medicineInput.value.trim() === q) {
+                            showSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+                        }
+                    })
+                    .catch(function () { /* suggestions are optional */ });
+            }, 250);
+        });
+
+        medicineInput.addEventListener("blur", function () { setTimeout(hideSuggestions, 150); });
+        medicineInput.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") hideSuggestions();
+        });
+        searchForm.addEventListener("submit", hideSuggestions);
+        clearSearch.addEventListener("click", hideSuggestions);
+    })();
 
     // ============================================================
     // DIET PDF DOWNLOAD
@@ -7877,6 +7967,128 @@ def ocr_match():
 
 
 # ============================================================
+# SEARCH SUGGESTIONS (spelling help under the search box)
+# ============================================================
+# Names only, no medical advice. Suggestions come from (1) products already saved in
+# our own catalogue and (2) this short list of common medicine names. Typos such as
+# "cetirizen" still find "Cetirizine".
+SUGGEST_COMMON = [
+    "Paracetamol", "Dolo 650", "Dolo 500", "Crocin", "Calpol", "Saridon", "Combiflam", "Ibuprofen",
+    "Zerodol", "Diclofenac", "Aceclofenac", "Nimesulide", "Aspirin", "Ecosprin", "Ecosprin AV",
+    "Meftal Spas", "Cyclopam", "Buscopan", "Drotaverine",
+    "Cetirizine", "Cetirizine 10 mg", "Okacet", "Levocetirizine", "Allegra", "Fexofenadine",
+    "Montelukast", "Montair LC", "Montek LC", "Avil", "Benadryl", "Sinarest", "Vicks Action 500",
+    "Cofsils", "Honitus", "Ascoril", "Grilinctus", "Vicks VapoRub",
+    "Azithromycin", "Azee 500", "Amoxicillin", "Augmentin 625", "Cefixime", "Cefpodoxime",
+    "Ofloxacin", "Ciprofloxacin", "Levofloxacin", "Doxycycline", "Metronidazole", "Norflox TZ",
+    "Pantoprazole", "Pantop 40", "Pan 40", "Omeprazole", "Omez", "Rabeprazole", "Esomeprazole",
+    "Ranitidine", "Domperidone", "Ondansetron", "Digene", "Gelusil", "Eno", "ORS", "Electral", "Loperamide",
+    "Metformin", "Glycomet", "Glimepiride", "Gliclazide", "Sitagliptin",
+    "Telmisartan", "Telma 40", "Amlodipine", "Amlokind", "Losartan", "Atenolol", "Metoprolol",
+    "Atorvastatin", "Rosuvastatin", "Clopidogrel", "Levothyroxine", "Thyronorm", "Eltroxin",
+    "Salbutamol", "Asthalin", "Budecort", "Duolin", "Levolin",
+    "Vitamin D3", "Calcium", "Shelcal 500", "Becosules", "Zincovit", "Limcee", "Vitamin C",
+    "Vitamin B12", "Neurobion Forte", "Folic Acid", "Dexorange", "Liv 52", "Revital", "Multivitamin",
+    "Betadine", "Volini", "Moov", "Iodex",
+]
+
+_suggest_cache = {"time": 0.0, "names": []}
+_suggest_hits = {}
+_suggest_lock = threading.Lock()
+
+
+def _suggest_norm(value):
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).split())
+
+
+def _suggest_catalogue_names():
+    """Recent product names from our own DB, cached for 2 minutes (typing must stay cheap)."""
+    now = time.time()
+    if now - _suggest_cache["time"] < 120 and _suggest_cache["names"]:
+        return _suggest_cache["names"]
+    names = []
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT name FROM products "
+                    "WHERE name IS NOT NULL AND trim(name) <> '' "
+                    "ORDER BY last_seen_at DESC LIMIT 3000"
+                ).fetchall()
+            finally:
+                conn.close()
+        names = [" ".join(str(r["name"]).split()) for r in rows if str(r["name"]).strip()]
+    except Exception:
+        names = []
+    _suggest_cache["time"] = now
+    _suggest_cache["names"] = names
+    return names
+
+
+def _suggest_rate_limited(ip):
+    now = time.time()
+    with _suggest_lock:
+        hits = [t for t in _suggest_hits.get(ip, []) if now - t < 60]
+        if len(hits) >= 120:
+            _suggest_hits[ip] = hits
+            return True
+        hits.append(now)
+        _suggest_hits[ip] = hits
+        return False
+
+
+def _suggest_best(q, limit=6):
+    qn = _suggest_norm(q)
+    qc = qn.replace(" ", "")
+    if len(qc) < 3:
+        return []
+    scored = {}
+    candidates = [(n, 0.01) for n in SUGGEST_COMMON] + [(n, 0.0) for n in _suggest_catalogue_names()]
+    for name, bonus in candidates:
+        nn = _suggest_norm(name)
+        if not nn:
+            continue
+        nc = nn.replace(" ", "")
+        words = nn.split()
+        score = 0.0
+        if nn.startswith(qn) or nc.startswith(qc):
+            score = 1.0 - min(len(nc) - len(qc), 40) / 400.0
+        elif any(w.startswith(qn) for w in words):
+            score = 0.93
+        elif len(qc) >= 4:
+            # spelling mistakes: compare with the same-length start of the name and with its first words
+            best = 0.0
+            pieces = [nc[:len(qc)], nc[:len(qc) + 1]] + [w for w in words[:3] if len(w) >= 4]
+            for piece in pieces:
+                if abs(len(piece) - len(qc)) > max(2, len(qc) // 3):
+                    continue
+                ratio = difflib.SequenceMatcher(None, qc, piece).ratio()
+                if ratio > best:
+                    best = ratio
+            if best >= 0.82:
+                score = best * 0.9
+        if score <= 0:
+            continue
+        score += bonus
+        key = nn
+        if key not in scored or score > scored[key][0]:
+            scored[key] = (score, name)
+    ranked = sorted(scored.values(), key=lambda item: (-item[0], len(item[1]), item[1].lower()))
+    return [name for _, name in ranked[:limit]]
+
+
+@app.route("/api/suggest", methods=["GET"])
+def api_suggest():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.remote_addr or "unknown")
+    if _suggest_rate_limited(ip):
+        return {"suggestions": []}
+    q = str(request.args.get("q") or "")[:60]
+    return {"suggestions": _suggest_best(q)}
+
+
+# ============================================================
 # AI PHOTO SCAN (prescriptions + medicine boxes/strips)
 # ============================================================
 # The browser sends the captured photo here. The server calls a vision AI, so the
@@ -8627,4 +8839,17 @@ if __name__ == "__main__":
 #  - At most 3 suggestions; wording says it is only a basic OCR guess and may be wrong.
 # The AI scan path (Gemini/Claude) is unchanged.
 # GIT: git add app.py ; git commit -m "Make basic OCR catalogue matching strict" ; git push origin main
+# ============================================================
+
+# ============================================================
+# V13.9.3 SEARCH SUGGESTIONS (spelling help under the search box)
+# ============================================================
+#  - While typing (3+ letters) a small list appears under the search box.
+#  - Tapping a suggestion puts it in the search box. It does NOT search by itself;
+#    the user still taps Search.
+#  - Typos are handled: "cetirizen" -> Cetirizine, "paracetmol" -> Paracetamol.
+#  - Sources: names already saved in our own catalogue + a short list of common
+#    medicine names (SUGGEST_COMMON in app.py; add more names there any time).
+#  - New route: GET /api/suggest?q=...  (no key, no cost, 120 requests/min per visitor)
+# GIT: python -m py_compile app.py ; git add app.py ; git commit -m "Add search suggestions" ; git push origin main
 # ============================================================
