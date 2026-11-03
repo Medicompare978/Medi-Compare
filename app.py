@@ -8,6 +8,7 @@ import queue
 import time
 import hashlib
 import difflib
+from concurrent.futures import ThreadPoolExecutor
 import re
 import base64
 from urllib.parse import urlparse, urljoin
@@ -1114,6 +1115,39 @@ def fetch_through_provider_queue(pharmacy, query, fetch_products):
             "status_code": 503,
             "error": "Provider request queue is busy; saved data will be used if available.",
         }
+
+
+# ============================================================
+# PARALLEL PHARMACY SEARCH (fixes "Internal Server Error" / WORKER TIMEOUT)
+# ============================================================
+# Before: the 5 pharmacies were asked one after another, each allowed up to 25-60 s,
+# so one slow pharmacy pushed the page past gunicorn's 30 s limit and the worker was killed.
+# Now: all 5 run at the same time and the page waits at most SEARCH_DEADLINE_SECONDS.
+# A pharmacy that is still busy is skipped for this page ("Live data unavailable"); its
+# request keeps running in the background and saves to the catalogue for the next search.
+SEARCH_DEADLINE_SECONDS = float(os.getenv("MEDICOMPARE_SEARCH_DEADLINE", "55"))
+
+
+def search_all_pharmacies(query):
+    jobs = {
+        "apollo": fetch_apollo_products,
+        "medplus": fetch_medplus_products,
+        "pharmeasy": fetch_pharmeasy_products,
+        "tata1mg": fetch_tata1mg_products,
+        "netmeds": fetch_netmeds_products,
+    }
+    pool = ThreadPoolExecutor(max_workers=len(jobs))
+    futures = {name: pool.submit(cached_search, name, query, fn) for name, fn in jobs.items()}
+    deadline = time.time() + SEARCH_DEADLINE_SECONDS
+    results = {}
+    for name, future in futures.items():
+        try:
+            results[name] = future.result(timeout=max(0.1, deadline - time.time()))
+        except Exception as exc:
+            print("Pharmacy search skipped:", name, type(exc).__name__)
+            results[name] = ([], None, "error")
+    pool.shutdown(wait=False)  # never block the page on a straggler
+    return results
 
 
 def cached_search(pharmacy, query, fetch_products):
@@ -8450,15 +8484,13 @@ def home():
             # A first-time query may use the provider API. Repeated queries
             # from any user use the same saved data until refresh is needed.
 
+            provider_results = search_all_pharmacies(searched_medicine)
+
             (
                 apollo_products,
                 apollo_checked_at,
                 apollo_source,
-            ) = cached_search(
-                "apollo",
-                searched_medicine,
-                fetch_apollo_products,
-            )
+            ) = provider_results["apollo"]
             # The Apollo API can return broad related products. Keep the
             # exact-strength guard active even for old cached/catalogue data.
             apollo_products = filter_exact_strength_results(
@@ -8475,11 +8507,7 @@ def home():
                 medplus_products,
                 medplus_checked_at,
                 medplus_source,
-            ) = cached_search(
-                "medplus",
-                searched_medicine,
-                fetch_medplus_products,
-            )
+            ) = provider_results["medplus"]
             medplus_products = filter_exact_strength_results(searched_medicine, medplus_products)
             cache_meta["medplus"] = format_cache_meta(
                 medplus_checked_at,
@@ -8490,11 +8518,7 @@ def home():
                 pharmeasy_products,
                 pharmeasy_checked_at,
                 pharmeasy_source,
-            ) = cached_search(
-                "pharmeasy",
-                searched_medicine,
-                fetch_pharmeasy_products,
-            )
+            ) = provider_results["pharmeasy"]
             pharmeasy_products = filter_exact_strength_results(searched_medicine, pharmeasy_products)
             cache_meta["pharmeasy"] = format_cache_meta(
                 pharmeasy_checked_at,
@@ -8505,11 +8529,7 @@ def home():
                 tata1mg_products,
                 tata1mg_checked_at,
                 tata1mg_source,
-            ) = cached_search(
-                "tata1mg",
-                searched_medicine,
-                fetch_tata1mg_products,
-            )
+            ) = provider_results["tata1mg"]
             tata1mg_products = filter_exact_strength_results(searched_medicine, tata1mg_products)
             cache_meta["tata1mg"] = format_cache_meta(
                 tata1mg_checked_at,
@@ -8520,11 +8540,7 @@ def home():
                 netmeds_products,
                 netmeds_checked_at,
                 netmeds_source,
-            ) = cached_search(
-                "netmeds",
-                searched_medicine,
-                fetch_netmeds_products,
-            )
+            ) = provider_results["netmeds"]
             netmeds_products = filter_exact_strength_results(searched_medicine, netmeds_products)
             cache_meta["netmeds"] = format_cache_meta(
                 netmeds_checked_at,
@@ -8852,4 +8868,18 @@ if __name__ == "__main__":
 #    medicine names (SUGGEST_COMMON in app.py; add more names there any time).
 #  - New route: GET /api/suggest?q=...  (no key, no cost, 120 requests/min per visitor)
 # GIT: python -m py_compile app.py ; git add app.py ; git commit -m "Add search suggestions" ; git push origin main
+# ============================================================
+
+# ============================================================
+# V13.9.4 FIX: "Internal Server Error" on search (gunicorn WORKER TIMEOUT)
+# ============================================================
+# Cause (from Render logs): the 5 pharmacies were queried one after another; MedPlus returned
+# 503 and Netmeds was slow, so the page took longer than gunicorn's 30 s limit and the worker was killed.
+#  - All pharmacies are now queried at the same time (search_all_pharmacies).
+#  - The page waits at most 55 s (MEDICOMPARE_SEARCH_DEADLINE). A slow pharmacy shows
+#    "Live data unavailable" for that search and saves its result in the background.
+#  - gunicorn.conf.py (new file, same folder as app.py) raises the worker timeout to 120 s and
+#    uses 4 threads so one slow search no longer blocks everyone else. Gunicorn reads it automatically.
+#    If Render's Start Command already contains --timeout or --workers, those flags win over the file.
+# GIT: git add app.py gunicorn.conf.py ; git commit -m "Fix search timeout: parallel pharmacy lookups" ; git push origin main
 # ============================================================
