@@ -6447,7 +6447,7 @@ HTML = r"""
                     const button = document.createElement("button");
                     button.type = "button";
                     button.className = "ocr-match-button";
-                    button.textContent = index === 0 ? "Use this medicine" : "Use this result";
+                    button.textContent = "Use this result";
                     button.addEventListener("click", function () {
                         medicineInput.value = match.name;
                         updateClearButton();
@@ -6460,7 +6460,7 @@ HTML = r"""
                     matchList.appendChild(card);
                 });
                 matchList.classList.add("show");
-                ocrResult.textContent = "Possible medicine found from your saved pharmacy catalogue. Please verify the exact name, strength and pack size.";
+                ocrResult.textContent = "The AI scan was unavailable, so this is only a basic OCR guess from the saved catalogue. It may be wrong. Check the name, strength and pack size carefully.";
                 ocrResult.classList.add("show");
                 cameraHint.textContent = "Choose the correct catalogue result. We will not search until you confirm it.";
                 cameraResult.textContent = "OCR matched a catalogue medicine — choose the correct result.";
@@ -7769,6 +7769,10 @@ def download_diet_pdf():
 # ============================================================
 # OCR -> SHARED CATALOGUE MATCHING
 # ============================================================
+# Basic-OCR fallback only: a catalogue name must be a near-exact match (default 0.86).
+OCR_MATCH_MIN_SCORE = float(os.getenv("OCR_MATCH_MIN_SCORE", "0.86"))
+
+
 @app.route("/api/ocr-match", methods=["POST"])
 def ocr_match():
     """Match noisy OCR text against products already discovered in our shared catalogue.
@@ -7817,8 +7821,9 @@ def ocr_match():
             return 0.0
         if a == b:
             return 1.0
-        if a in b or b in a:
-            return min(0.98, 0.82 + 0.16 * min(len(a), len(b)) / max(len(a), len(b)))
+        short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+        if short in long_ and len(short) >= 5 and len(short) / len(long_) >= 0.4:
+            return min(0.98, 0.82 + 0.16 * len(short) / len(long_))
         return difflib.SequenceMatcher(None, a, b).ratio()
 
     results = []
@@ -7846,14 +7851,8 @@ def ocr_match():
                     best = score
                     best_line = candidate
 
-            # Composition can rescue generic brand OCR when the OCR captured the
-            # active ingredient instead of the brand name.
-            composition = str(row["composition"] or "")
-            if composition:
-                comp_score = similarity(line, composition)
-                best = max(best, comp_score * 0.96)
 
-        if best < 0.68:
+        if best < OCR_MATCH_MIN_SCORE:
             continue
 
         key = name_norm
@@ -7874,7 +7873,7 @@ def ocr_match():
         })
 
     results.sort(key=lambda item: item["score"], reverse=True)
-    return {"matches": results[:8]}
+    return {"matches": results[:3]}
 
 
 # ============================================================
@@ -8616,4 +8615,16 @@ if __name__ == "__main__":
 # projects), so every scan fell back to Tesseract. The scan now tries a list of
 # current models in order. Logs show which one worked: "Gemini scan OK with model: ..."
 # GIT: git add app.py ; git commit -m "Fix Gemini 404 by trying current models" ; git push origin main
+# ============================================================
+
+# ============================================================
+# V13.9.2 STRICTER BASIC-OCR FALLBACK
+# ============================================================
+# Only affects the Tesseract fallback (used when the AI scan is unavailable).
+#  - /api/ocr-match now needs a near-exact name match (OCR_MATCH_MIN_SCORE, default 0.86; was 0.68).
+#  - Short words (under 5 letters, e.g. TAB, MG) can no longer match by substring.
+#  - Matching by similar COMPOSITION was removed, so a different brand is never suggested.
+#  - At most 3 suggestions; wording says it is only a basic OCR guess and may be wrong.
+# The AI scan path (Gemini/Claude) is unchanged.
+# GIT: git add app.py ; git commit -m "Make basic OCR catalogue matching strict" ; git push origin main
 # ============================================================
