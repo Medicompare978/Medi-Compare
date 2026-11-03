@@ -7887,7 +7887,15 @@ def ocr_match():
 # If both are set, SCAN_PROVIDER decides who goes first (default: gemini).
 # If neither works, the browser falls back to Tesseract (basic OCR).
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_SCAN_MODEL = os.getenv("GEMINI_SCAN_MODEL", "gemini-2.5-flash")
+# Comma-separated list. Tried in order; a 404 (model retired) or 429 (quota) moves to the next one.
+GEMINI_SCAN_MODELS = [
+    m.strip()
+    for m in os.getenv(
+        "GEMINI_SCAN_MODEL",
+        "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.8-flash,gemini-2.5-flash",
+    ).split(",")
+    if m.strip()
+]
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_SCAN_MODEL = os.getenv("CLAUDE_SCAN_MODEL", "claude-sonnet-5-5")
 SCAN_PROVIDER = os.getenv("SCAN_PROVIDER", "gemini").lower()
@@ -7954,8 +7962,7 @@ def _scan_providers():
 
 
 def _scan_with_gemini(image, media_type):
-    """Return the model's text, or None if the call failed. Never logs key or image."""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % GEMINI_SCAN_MODEL
+    """Return the model's text, or None if every model failed. Never logs key or image."""
     body = {
         "contents": [
             {
@@ -7971,26 +7978,36 @@ def _scan_with_gemini(image, media_type):
             "maxOutputTokens": 4000,
         },
     }
-    try:
-        response = requests.post(
-            url,
-            headers={"x-goog-api-key": GEMINI_API_KEY, "content-type": "application/json"},
-            json=body,
-            timeout=60,
-        )
-    except requests.RequestException as exc:
-        print("Gemini scan request failed:", type(exc).__name__)
-        return None
-    if response.status_code != 200:
-        print("Gemini scan HTTP status:", response.status_code)
-        return None
-    try:
-        data = response.json()
-        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
-        return "".join(p.get("text", "") for p in parts)
-    except Exception:
-        print("Gemini scan: unexpected reply shape")
-        return None
+    for model in GEMINI_SCAN_MODELS:
+        url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % model
+        try:
+            response = requests.post(
+                url,
+                headers={"x-goog-api-key": GEMINI_API_KEY, "content-type": "application/json"},
+                json=body,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            print("Gemini scan request failed:", type(exc).__name__, "model:", model)
+            return None
+        if response.status_code in (404, 429, 503):
+            # model retired / quota used for this model / busy: try the next model
+            print("Gemini scan HTTP status:", response.status_code, "model:", model, "-> trying next")
+            continue
+        if response.status_code != 200:
+            print("Gemini scan HTTP status:", response.status_code, "model:", model)
+            return None
+        try:
+            data = response.json()
+            parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts)
+        except Exception:
+            print("Gemini scan: unexpected reply shape, model:", model)
+            return None
+        if text:
+            print("Gemini scan OK with model:", model)
+            return text
+    return None
 
 
 def _scan_with_claude(image, media_type):
@@ -8567,9 +8584,9 @@ if __name__ == "__main__":
 #
 # ENVIRONMENT VARIABLES (Render > Environment, and .env locally)
 #   GEMINI_API_KEY      your key from aistudio.google.com (free tier)
-#   GEMINI_SCAN_MODEL   optional, default gemini-2.5-flash. If logs show
-#                       "Gemini scan HTTP status: 404", set this to a current
-#                       Flash model name shown in AI Studio.
+#   GEMINI_SCAN_MODEL   optional, comma-separated model names tried in order.
+#                       Default: gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.8-flash,gemini-2.5-flash
+#                       (404 or 429 on one model moves on to the next one).
 #   ANTHROPIC_API_KEY   optional backup (paid)
 #   SCAN_PROVIDER       optional: gemini (default) or claude
 #   SCAN_MAX_PER_HOUR   optional, default 15 scans per visitor IP per hour
@@ -8590,4 +8607,13 @@ if __name__ == "__main__":
 #   git add app.py
 #   git commit -m "Add free Gemini scan, medicine-only reading, safer OCR fallback"
 #   git push origin main
+# ============================================================
+
+# ============================================================
+# V13.9.1 FIX: Gemini 404
+# ============================================================
+# gemini-2.5-flash returned 404 for new API keys (Google retired it for new
+# projects), so every scan fell back to Tesseract. The scan now tries a list of
+# current models in order. Logs show which one worked: "Gemini scan OK with model: ..."
+# GIT: git add app.py ; git commit -m "Fix Gemini 404 by trying current models" ; git push origin main
 # ============================================================
