@@ -852,32 +852,116 @@ def _query_tokens(query):
     return [token for token in normalize_query(query).split() if token]
 
 
-def filter_exact_strength_results(query, products):
-    """Remove unrelated provider results for searches containing a strength.
+_FILTER_STOPWORDS = {
+    "tablet", "tablets", "tab", "tabs", "capsule", "capsules", "cap", "caps", "strip", "pack", "of", "s",
+    "the", "and", "for", "with", "mg", "mcg", "gm", "g", "ml", "iu", "ip", "bp", "usp", "nos", "no",
+    "hydrochloride", "hcl", "sodium", "potassium", "tartrate", "maleate", "besylate", "succinate",
+    "sulphate", "sulfate", "phosphate", "acetate", "citrate", "dihydrate", "trihydrate",
+}
+# A number counts as a PACK size only with 's / s / plural units ("10's", "10s", "1000 tablets", "15 tablet(s)").
+# "650 Tablet" (singular) is a strength, not a pack.
+_PACK_PATTERN = re.compile(r"(\d+)\s*(?:'s\b|\u2019s\b|s\b|tablets\b|tabs\b|capsules\b|caps\b|tablet\(s\)|capsule\(s\))")
 
-    Example: a search for Dolo 650 must not show Tiger Balm, lozenges,
-    thermometers, etc. The filter requires every query token to appear in the
-    product name/composition/pack text. Broad symptom searches remain unchanged.
+
+def _clean_for_match(value):
+    return str(value or "").lower().replace("-", " ").replace("/", " ")
+
+
+def _normalize_number(number):
+    try:
+        return str(float(number)).rstrip("0").rstrip(".")
+    except ValueError:
+        return str(number)
+
+
+def _parse_query_parts(query):
+    """Split a search into medicine words, strength numbers and pack sizes."""
+    text = _clean_for_match(query)
+    packs = {_normalize_number(n) for n in _PACK_PATTERN.findall(text)}
+    rest = _PACK_PATTERN.sub(" ", text)
+    strengths = [_normalize_number(n) for n in re.findall(r"\d+(?:\.\d+)?", rest)]
+    words = [w for w in re.findall(r"[a-z]+", rest) if w not in _FILTER_STOPWORDS and len(w) >= 2]
+    return words, strengths, packs
+
+
+def _product_main_text(product):
+    return _clean_for_match(" ".join(
+        str(product.get(key) or "")
+        for key in ("name", "product_name", "composition", "manufacturer")
+    ))
+
+
+def _product_numbers(product):
+    """Strength numbers from name + composition only (pack sizes removed first)."""
+    text = _clean_for_match(" ".join(
+        str(product.get(key) or "") for key in ("name", "product_name", "composition")
+    ))
+    text = _PACK_PATTERN.sub(" ", text)
+    text = re.sub(r"(?:strip|pack|box|bottle)\s+of\s+\d+", " ", text)
+    return {_normalize_number(n) for n in re.findall(r"\d+(?:\.\d+)?", text)}
+
+
+def _word_in_text(word, text):
+    # whole-word match: "cetirizine" must not match "levocetirizine"; "dolo" must not match "dolopar";
+    # digits may follow ("dolo650").
+    return re.search(r"(?<![a-z])" + re.escape(word) + r"(?![a-z])", text) is not None
+
+
+def product_strength_label(product):
+    """Dosage text for the comparison table, e.g. '500 mg' or '400 mg + 325 mg'."""
+    composition = str(product.get("composition") or "")
+    name = str(product.get("name") or product.get("product_name") or "")
+    for source in (composition, name):
+        found = re.findall(r"(\d+(?:\.\d+)?)\s*(mcg|mg|gm|ml|iu|g|%)", source.lower())
+        if found:
+            seen = []
+            for number, unit in found:
+                label = f"{_normalize_number(number)} {'g' if unit == 'gm' else unit}"
+                if label not in seen:
+                    seen.append(label)
+            return " + ".join(seen[:3])
+    numbers = sorted(_product_numbers(product), key=lambda n: float(n) if n.replace(".", "", 1).isdigit() else 0)
+    return " / ".join(numbers[:2]) if numbers else ""
+
+
+def filter_exact_strength_results(query, products):
+    """Keep only results that really match what was searched.
+
+    - Searches WITH a strength (Dolo 650, Paracetamol 500mg Tablet 10's): the medicine word(s) AND the
+      strength number must be present. "500mg", "500 MG" and "Dolo-500" all count; the pack size
+      (10's / 15 tablets) is only shown, it never removes a result.
+    - Searches without a strength (Cetirizine): results are kept unless we can see they are a different
+      medicine (their name/composition/description does not contain the searched word).
     """
     if not products:
         return []
 
-    tokens = _query_tokens(query)
-    if not tokens or not any(re.search(r"\d", token) for token in tokens):
+    words, strengths, _packs = _parse_query_parts(query)
+    if not words and not strengths:
         return products
+    strict = bool(strengths)
+    needed = max(1, (len(words) + 1) // 2) if words else 0
 
-    filtered = []
+    kept = []
     for product in products:
         if not isinstance(product, dict):
             continue
-        searchable = normalize_query(" ".join(
-            str(product.get(key) or "")
-            for key in ("name", "product_name", "composition", "pack_size", "manufacturer")
-        ))
-        if all(token in searchable for token in tokens):
-            filtered.append(product)
+        main_text = _product_main_text(product)
+        description = _clean_for_match(str(product.get("description") or "")[:500])
+        has_detail = bool(str(product.get("composition") or "").strip()) or bool(description.strip())
 
-    return filtered
+        if words:
+            matched = sum(1 for w in words if _word_in_text(w, main_text) or _word_in_text(w, description))
+            if matched < needed and (strict or has_detail):
+                continue
+
+        if strengths:
+            numbers = _product_numbers(product)
+            if not all(s in numbers for s in strengths):
+                continue
+
+        kept.append(product)
+    return kept
 
 
 def search_shared_catalogue(pharmacy, query, limit=30):
@@ -1145,7 +1229,8 @@ def search_all_pharmacies(query):
             results[name] = future.result(timeout=max(0.1, deadline - time.time()))
         except Exception as exc:
             print("Pharmacy search skipped:", name, type(exc).__name__)
-            results[name] = ([], None, "error")
+            results[name] = ([], None, "timeout" if isinstance(exc, TimeoutError) else "error")
+        print("Search outcome:", name, "| source:", results[name][2], "| products:", len(results[name][0] or []))
     pool.shutdown(wait=False)  # never block the page on a straggler
     return results
 
@@ -1848,6 +1933,11 @@ def format_cache_meta(fetched_at, source):
                 "label": "⚠️ Live data unavailable",
                 "source": source,
             }
+        if source == "timeout":
+            return {
+                "label": "⏱ Took too long - search again in a minute",
+                "source": source,
+            }
         return {"label": "Price data unavailable", "source": source}
 
     age_seconds = max(0, time.time() - float(fetched_at))
@@ -2023,6 +2113,9 @@ HTML = r"""
             min-width: 0;
         }
 
+        .comparison-panel .comparison-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .comparison-panel .comparison-table { min-width: 640px; }
+        .comparison-panel .compare-dose { white-space: nowrap; font-weight: 700; color: #0b4f3a; font-size: 13px; }
         .suggest-box {
             display: none;
             position: absolute;
@@ -4903,12 +4996,13 @@ HTML = r"""
     <p class="comparison-caption">Offers found for this search. Check the exact strength, composition and pack size before buying. Prices and stock can change on pharmacy websites.</p>
     <div class="comparison-table-wrap">
         <table class="comparison-table">
-            <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th>Price</th><th>Open</th></tr></thead>
+            <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th>Dosage</th><th>Price</th><th>Open</th></tr></thead>
             <tbody>
             {% for item in comparison_rows %}
                 <tr class="{% if item.is_best %}best-value-row{% endif %}">
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
+                    <td class="compare-dose">{{ item.strength if item.strength else "—" }}</td>
                     <td class="compare-price">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
                     <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</a></td>
                 </tr>
@@ -5014,7 +5108,7 @@ HTML = r"""
                 <div class="price-row">
 
                     <span class="price">
-                        ₹{{ "%.2f"|format(product.price|float) }}
+                        {% if product.price and product.price|float > 0 %}₹{{ "%.2f"|format(product.price|float) }}{% else %}Price unavailable{% endif %}
                     </span>
 
 
@@ -5187,7 +5281,7 @@ HTML = r"""
                           and product.price is not none %}
 
                     <span class="price">
-                        ₹{{ "%.2f"|format(product.price|float) }}
+                        {% if product.price and product.price|float > 0 %}₹{{ "%.2f"|format(product.price|float) }}{% else %}Price unavailable{% endif %}
                     </span>
 
                     {% elif product.regular_price is defined
@@ -5375,7 +5469,7 @@ HTML = r"""
                 <div class="price-row">
 
                     <span class="price">
-                        ₹{{ "%.2f"|format(product.price|float) }}
+                        {% if product.price and product.price|float > 0 %}₹{{ "%.2f"|format(product.price|float) }}{% else %}Price unavailable{% endif %}
                     </span>
 
 
@@ -5480,7 +5574,7 @@ HTML = r"""
                 </div>
                 <div class="price-row">
                     {% if product.price is not none %}
-                    <span class="price">₹{{ "%.2f"|format(product.price|float) }}</span>
+                    <span class="price">{% if product.price and product.price|float > 0 %}₹{{ "%.2f"|format(product.price|float) }}{% else %}Price unavailable{% endif %}</span>
                     {% endif %}
                     {% if product.mrp and product.price and product.mrp|float > product.price|float %}
                     <span class="mrp">MRP ₹{{ "%.2f"|format(product.mrp|float) }}</span>
@@ -5545,7 +5639,7 @@ HTML = r"""
                 </div>
                 <div class="price-row">
                     {% if product.price is not none %}
-                    <span class="price">₹{{ "%.2f"|format(product.price|float) }}</span>
+                    <span class="price">{% if product.price and product.price|float > 0 %}₹{{ "%.2f"|format(product.price|float) }}{% else %}Price unavailable{% endif %}</span>
                     {% endif %}
                     {% if product.mrp and product.price and product.mrp|float > product.price|float %}
                     <span class="mrp">MRP ₹{{ "%.2f"|format(product.mrp|float) }}</span>
@@ -8547,6 +8641,19 @@ def home():
                 netmeds_source,
             )
 
+            # Show the provider's last error code next to "Live data unavailable".
+            for _name, _source in (
+                ("apollo", apollo_source), ("medplus", medplus_source), ("pharmeasy", pharmeasy_source),
+                ("tata1mg", tata1mg_source), ("netmeds", netmeds_source),
+            ):
+                if _source == "error":
+                    try:
+                        _status = get_provider_state(_name).get("last_status")
+                    except Exception:
+                        _status = None
+                    if _status:
+                        cache_meta[_name]["label"] += f" (provider error {_status})"
+
             # Build a compact cross-pharmacy price summary from live/catalogue results.
             # Use each pharmacy's first returned offer; never invent missing prices or URLs.
             pharmacy_offers = [
@@ -8571,10 +8678,13 @@ def home():
                     parsed_price = float(raw_price) if raw_price not in (None, "") else None
                 except (TypeError, ValueError):
                     parsed_price = None
+                if parsed_price is not None and parsed_price <= 0:
+                    parsed_price = None  # a pharmacy sometimes returns 0 when it has no real price
                 comparison_rows.append({
                     "pharmacy": pharmacy_name,
                     "name": product.get("name") or product.get("product_name") or searched_medicine,
                     "pack_size": product.get("pack_size") or product.get("pack"),
+                    "strength": product_strength_label(product),
                     "price": parsed_price,
                     "url": product.get("product_url"),
                     "search_url": fallback_url,
@@ -8585,6 +8695,7 @@ def home():
                 lowest_price = min(row["price"] for row in priced_rows)
                 for row in priced_rows:
                     row["is_best"] = abs(row["price"] - lowest_price) < 0.005
+            comparison_rows.sort(key=lambda row: (row["price"] is None, row["price"] or 0))
 
             if (
                 not apollo_products
@@ -8882,4 +8993,18 @@ if __name__ == "__main__":
 #    uses 4 threads so one slow search no longer blocks everyone else. Gunicorn reads it automatically.
 #    If Render's Start Command already contains --timeout or --workers, those flags win over the file.
 # GIT: git add app.py gunicorn.conf.py ; git commit -m "Fix search timeout: parallel pharmacy lookups" ; git push origin main
+# ============================================================
+
+# ============================================================
+# V13.9.5 BETTER MATCHING + DOSAGE COLUMN
+# ============================================================
+#  - Relevance filter rewritten (filter_exact_strength_results). Old rule needed EVERY typed word to appear
+#    exactly, so "500mg" vs "500 MG" or "10's" vs "10 Tablets" removed real results and only 1-2 pharmacies were left.
+#    New rule: medicine word + strength number must match; formats and pack sizes no longer matter.
+#    Whole-word matching: Cetirizine does not match Levocetirizine, Dolo does not match Dolopar.
+#  - Comparison table has a new "Dosage" column (e.g. 500 mg). The table scrolls sideways on phones.
+#  - Price 0 (returned by some pharmacies when they have no real price) now shows "Price unavailable"
+#    and is never "best value". Rows are sorted cheapest first.
+#  - "Live data unavailable" now shows the provider's error code, and logs show "Search outcome: <pharmacy> | source | products".
+# GIT: python -m py_compile app.py ; git add app.py ; git commit -m "Better matching, dosage column" ; git push origin main
 # ============================================================
