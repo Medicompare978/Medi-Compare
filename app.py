@@ -2113,9 +2113,52 @@ HTML = r"""
             min-width: 0;
         }
 
-        .comparison-panel .comparison-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .comparison-panel .comparison-table { min-width: 640px; }
-        .comparison-panel .compare-dose { white-space: nowrap; font-weight: 700; color: #0b4f3a; font-size: 13px; }
+        .comparison-panel .compare-dose { font-weight: 700; color: #0b4f3a; font-size: 13px; }
+
+        /* PHONES: the whole comparison is visible at once, no swiping. Each pharmacy becomes one compact card:
+           [Pharmacy + best value]            [Price]
+           [Medicine name / pack]
+           [Dosage]                          [View product] */
+        @media (max-width: 700px) {
+            .comparison-panel .comparison-table-wrap { overflow-x: visible; border: 0; }
+            .comparison-panel .comparison-table,
+            .comparison-panel .comparison-table tbody { display: block; width: 100%; min-width: 0; }
+            .comparison-panel .comparison-table thead { display: none; }
+            .comparison-panel .comparison-table tr {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-areas: "ph price" "name name" "dose open";
+                gap: 6px 12px;
+                align-items: center;
+                padding: 12px 14px;
+                margin-bottom: 8px;
+                border: 1px solid #e2ebe7;
+                border-radius: 12px;
+                background: #ffffff;
+            }
+            .comparison-panel .comparison-table tr.best-value-row { background: #e9f7f1; border-color: #9fd6bd; }
+            .comparison-panel .comparison-table td { display: block; border: 0; padding: 0; min-width: 0; }
+            .comparison-panel .comparison-table td:nth-child(n) { width: auto; overflow-wrap: break-word; }
+            .comparison-panel .comparison-table td:nth-child(1) { grid-area: ph; font-weight: 800; font-size: 15px; }
+            .comparison-panel .comparison-table td:nth-child(2) { grid-area: name; font-size: 14px; }
+            .comparison-panel .comparison-table td:nth-child(3) { grid-area: dose; font-size: 13px; }
+            .comparison-panel .comparison-table td:nth-child(3)::before { content: "Dosage: "; font-weight: 600; color: #6b7b74; }
+            .comparison-panel .comparison-table td:nth-child(4) { grid-area: price; text-align: right; font-size: 18px; font-weight: 800; white-space: nowrap; }
+            .comparison-panel .comparison-table td:nth-child(5) { grid-area: open; text-align: right; }
+            .comparison-panel .comparison-table .comparison-buy { font-size: 13px; }
+            .comparison-panel .comparison-table .best-value-row td { background: transparent; }
+            .comparison-panel .comparison-table td.compare-price-na { font-size: 13px; font-weight: 700; color: #6b7b74; white-space: normal; }
+            .comparison-panel .best-value-pill { margin-left: 6px; }
+        }
+
+        /* LARGER SCREENS: 5 columns that add up to 100% (the old 4-column widths no longer fit) */
+        @media (min-width: 701px) {
+            .comparison-panel .comparison-table th:nth-child(1), .comparison-panel .comparison-table td:nth-child(1) { width: 17%; }
+            .comparison-panel .comparison-table th:nth-child(2), .comparison-panel .comparison-table td:nth-child(2) { width: 34%; }
+            .comparison-panel .comparison-table th:nth-child(3), .comparison-panel .comparison-table td:nth-child(3) { width: 15%; }
+            .comparison-panel .comparison-table th:nth-child(4), .comparison-panel .comparison-table td:nth-child(4) { width: 16%; }
+            .comparison-panel .comparison-table th:nth-child(5), .comparison-panel .comparison-table td:nth-child(5) { width: 18%; }
+        }
         .suggest-box {
             display: none;
             position: absolute;
@@ -5003,7 +5046,7 @@ HTML = r"""
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
                     <td class="compare-dose">{{ item.strength if item.strength else "—" }}</td>
-                    <td class="compare-price">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
+                    <td class="compare-price{% if item.price is none %} compare-price-na{% endif %}">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
                     <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</a></td>
                 </tr>
             {% endfor %}
@@ -9002,9 +9045,13 @@ if __name__ == "__main__":
 #    exactly, so "500mg" vs "500 MG" or "10's" vs "10 Tablets" removed real results and only 1-2 pharmacies were left.
 #    New rule: medicine word + strength number must match; formats and pack sizes no longer matter.
 #    Whole-word matching: Cetirizine does not match Levocetirizine, Dolo does not match Dolopar.
-#  - Comparison table has a new "Dosage" column (e.g. 500 mg). The table scrolls sideways on phones.
+#  - Comparison table has a new "Dosage" column (e.g. 500 mg). On phones every pharmacy is one compact card, so nothing needs swiping.
 #  - Price 0 (returned by some pharmacies when they have no real price) now shows "Price unavailable"
 #    and is never "best value". Rows are sorted cheapest first.
 #  - "Live data unavailable" now shows the provider's error code, and logs show "Search outcome: <pharmacy> | source | products".
 # GIT: python -m py_compile app.py ; git add app.py ; git commit -m "Better matching, dosage column" ; git push origin main
 # ============================================================
+
+# V13.9.6: comparison needs NO swiping. Phones show one compact card per pharmacy (price, name, pack, dosage,
+# link); larger screens show a 5-column table whose widths add up to 100%. (V13.9.5 added a 5th column on top of
+# the old 4-column widths, which pushed "Open" off-screen.) GIT: git add app.py ; git commit -m "Comparison fits screen, no swipe" ; git push origin main
