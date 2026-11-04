@@ -2115,40 +2115,27 @@ HTML = r"""
 
         .comparison-panel .compare-dose { font-weight: 700; color: #0b4f3a; font-size: 13px; }
 
-        /* PHONES: the whole comparison is visible at once, no swiping. Each pharmacy becomes one compact card:
-           [Pharmacy + best value]            [Price]
-           [Medicine name / pack]
-           [Dosage]                          [View product] */
+        /* PHONES: a compact horizontal table. All 5 columns are visible at once (no swiping). */
+        .comparison-panel .comparison-table .txt-short { display: none; }
         @media (max-width: 700px) {
-            .comparison-panel .comparison-table-wrap { overflow-x: visible; border: 0; }
-            .comparison-panel .comparison-table,
-            .comparison-panel .comparison-table tbody { display: block; width: 100%; min-width: 0; }
-            .comparison-panel .comparison-table thead { display: none; }
-            .comparison-panel .comparison-table tr {
-                display: grid;
-                grid-template-columns: minmax(0, 1fr) auto;
-                grid-template-areas: "ph price" "name name" "dose open";
-                gap: 6px 12px;
-                align-items: center;
-                padding: 12px 14px;
-                margin-bottom: 8px;
-                border: 1px solid #e2ebe7;
-                border-radius: 12px;
-                background: #ffffff;
-            }
-            .comparison-panel .comparison-table tr.best-value-row { background: #e9f7f1; border-color: #9fd6bd; }
-            .comparison-panel .comparison-table td { display: block; border: 0; padding: 0; min-width: 0; }
-            .comparison-panel .comparison-table td:nth-child(n) { width: auto; overflow-wrap: break-word; }
-            .comparison-panel .comparison-table td:nth-child(1) { grid-area: ph; font-weight: 800; font-size: 15px; }
-            .comparison-panel .comparison-table td:nth-child(2) { grid-area: name; font-size: 14px; }
-            .comparison-panel .comparison-table td:nth-child(3) { grid-area: dose; font-size: 13px; }
-            .comparison-panel .comparison-table td:nth-child(3)::before { content: "Dosage: "; font-weight: 600; color: #6b7b74; }
-            .comparison-panel .comparison-table td:nth-child(4) { grid-area: price; text-align: right; font-size: 18px; font-weight: 800; white-space: nowrap; }
-            .comparison-panel .comparison-table td:nth-child(5) { grid-area: open; text-align: right; }
-            .comparison-panel .comparison-table .comparison-buy { font-size: 13px; }
-            .comparison-panel .comparison-table .best-value-row td { background: transparent; }
-            .comparison-panel .comparison-table td.compare-price-na { font-size: 13px; font-weight: 700; color: #6b7b74; white-space: normal; }
-            .comparison-panel .best-value-pill { margin-left: 6px; }
+            .comparison-panel .comparison-table-wrap { overflow-x: hidden; }
+            .comparison-panel .comparison-table { table-layout: fixed; width: 100%; min-width: 0; }
+            .comparison-panel .comparison-table th,
+            .comparison-panel .comparison-table td { padding: 9px 4px; font-size: 11px; line-height: 1.25; vertical-align: middle; }
+            .comparison-panel .comparison-table th:nth-child(1), .comparison-panel .comparison-table td:nth-child(1) { width: 24%; padding-left: 8px; }
+            .comparison-panel .comparison-table th:nth-child(2), .comparison-panel .comparison-table td:nth-child(2) { width: 28%; }
+            .comparison-panel .comparison-table th:nth-child(3), .comparison-panel .comparison-table td:nth-child(3) { width: 14%; }
+            .comparison-panel .comparison-table th:nth-child(4), .comparison-panel .comparison-table td:nth-child(4) { width: 18%; }
+            .comparison-panel .comparison-table th:nth-child(5), .comparison-panel .comparison-table td:nth-child(5) { width: 16%; padding-right: 8px; }
+            .comparison-panel .comparison-table td:nth-child(1) { font-weight: 700; font-size: 11px; overflow-wrap: normal; word-break: normal; hyphens: none; }
+            .comparison-panel .comparison-table td.compare-dose { font-size: 11px; }
+            .comparison-panel .comparison-table th { font-size: 10.5px; }
+            .comparison-panel .comparison-table td.compare-price { font-size: 12px; font-weight: 800; white-space: nowrap; }
+            .comparison-panel .comparison-table td.compare-price-na { font-size: 11px; font-weight: 700; color: #6b7b74; }
+            .comparison-panel .comparison-table .comparison-buy { font-size: 11px; }
+            .comparison-panel .comparison-table .best-value-pill { font-size: 8px; padding: 2px 5px; margin: 4px 0 0; white-space: nowrap; }
+            .comparison-panel .comparison-table .txt-long { display: none; }
+            .comparison-panel .comparison-table .txt-short { display: inline; }
         }
 
         /* LARGER SCREENS: 5 columns that add up to 100% (the old 4-column widths no longer fit) */
@@ -2159,6 +2146,21 @@ HTML = r"""
             .comparison-panel .comparison-table th:nth-child(4), .comparison-panel .comparison-table td:nth-child(4) { width: 16%; }
             .comparison-panel .comparison-table th:nth-child(5), .comparison-panel .comparison-table td:nth-child(5) { width: 18%; }
         }
+        /* CLEAN NAVIGATION: line icons + small labels (replaces the emoji icons) */
+        .app-bottom-nav { border: 1px solid #e3ece8; box-shadow: 0 8px 26px rgba(16,56,44,0.14); }
+        .app-bottom-nav .app-nav-button { gap: 4px; color: #64746f; }
+        .app-bottom-nav .app-nav-button .nav-icon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; font-size: 0; }
+        .app-bottom-nav .app-nav-button .nav-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+        .app-bottom-nav .app-nav-button .nav-label { font-size: 12px; font-weight: 600; letter-spacing: 0; }
+        .app-bottom-nav .app-nav-button.active { background: #e9f6f1; color: #087f5b; }
+        .app-bottom-nav .app-nav-button.active .nav-icon svg { stroke-width: 2; }
+        .app-bottom-nav .app-nav-button.active .nav-label { font-weight: 700; }
+        @media (max-width: 560px) {
+            .app-bottom-nav .app-nav-button .nav-icon { width: 22px; height: 22px; }
+            .app-bottom-nav .app-nav-button .nav-icon svg { width: 22px; height: 22px; }
+            .app-bottom-nav .app-nav-button .nav-label { font-size: 10.5px; }
+        }
+
         .suggest-box {
             display: none;
             position: absolute;
@@ -5039,15 +5041,15 @@ HTML = r"""
     <p class="comparison-caption">Offers found for this search. Check the exact strength, composition and pack size before buying. Prices and stock can change on pharmacy websites.</p>
     <div class="comparison-table-wrap">
         <table class="comparison-table">
-            <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th>Dosage</th><th>Price</th><th>Open</th></tr></thead>
+            <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th><span class="txt-long">Dosage</span><span class="txt-short">Dose</span></th><th>Price</th><th>Open</th></tr></thead>
             <tbody>
             {% for item in comparison_rows %}
                 <tr class="{% if item.is_best %}best-value-row{% endif %}">
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
                     <td class="compare-dose">{{ item.strength if item.strength else "—" }}</td>
-                    <td class="compare-price{% if item.price is none %} compare-price-na{% endif %}">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}Price unavailable{% endif %}</td>
-                    <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</a></td>
+                    <td class="compare-price{% if item.price is none %} compare-price-na{% endif %}">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}<span class="txt-long">Price unavailable</span><span class="txt-short">N/A</span>{% endif %}</td>
+                    <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer"><span class="txt-long">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</span><span class="txt-short">{{ "View ↗" if item.url else "Search ↗" }}</span></a></td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -5979,27 +5981,27 @@ HTML = r"""
 ============================================================ -->
 <nav class="app-bottom-nav" aria-label="CompareMeds sections">
     <button type="button" class="app-nav-button active" id="navBuyMedi" data-section="buy">
-        <span class="nav-icon">💊</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span>
         <span class="nav-label">BuyMedi</span>
     </button>
     <button type="button" class="app-nav-button" id="navStepCounter" data-section="step">
-        <span class="nav-icon">👟</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg></span>
         <span class="nav-label">Step Counter</span>
     </button>
     <button type="button" class="app-nav-button" id="navDiet" data-section="diet">
-        <span class="nav-icon">🍎</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg></span>
         <span class="nav-label">Diet</span>
     </button>
     <button type="button" class="app-nav-button" id="navHospitals" data-section="hospitals">
-        <span class="nav-icon">🏥</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 6v4"/><path d="M14 8h-4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M18 22V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v18"/></svg></span>
         <span class="nav-label">Hospitals</span>
     </button>
     <button type="button" class="app-nav-button" id="navMediShop" data-section="medishop">
-        <span class="nav-icon">🏪</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></span>
         <span class="nav-label">Medi Shop</span>
     </button>
     <button type="button" class="app-nav-button" id="navLabScan" data-section="labscan" aria-label="Laboratories and scanning centres">
-        <span class="nav-icon">🧬</span>
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg></span>
         <span class="nav-label">Labs &amp; Scans</span>
     </button>
 </nav>
@@ -9055,3 +9057,7 @@ if __name__ == "__main__":
 # V13.9.6: comparison needs NO swiping. Phones show one compact card per pharmacy (price, name, pack, dosage,
 # link); larger screens show a 5-column table whose widths add up to 100%. (V13.9.5 added a 5th column on top of
 # the old 4-column widths, which pushed "Open" off-screen.) GIT: git add app.py ; git commit -m "Comparison fits screen, no swipe" ; git push origin main
+
+# V13.9.7: comparison is a compact HORIZONTAL table on phones too (all columns visible, no swiping, no cards);
+# bottom navigation uses clean line icons instead of emojis.
+# GIT: git add app.py ; git commit -m "Horizontal comparison table, clean nav icons" ; git push origin main
