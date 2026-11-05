@@ -2161,6 +2161,36 @@ HTML = r"""
             .app-bottom-nav .app-nav-button .nav-label { font-size: 10.5px; }
         }
 
+        /* PROFESSIONAL HOME CARDS: line icon badge + clear button (no emoji) */
+        .pre-search-animations .home-health-shortcut {
+            display: flex; flex-direction: column; align-items: flex-start;
+            background: #ffffff; border: 1px solid #dbe8e3; box-shadow: 0 2px 10px rgba(16,56,44,0.06);
+            transition: box-shadow .2s ease, border-color .2s ease, transform .15s ease;
+        }
+        .pre-search-animations .home-health-shortcut:nth-child(2) { background: #ffffff; border-color: #eadfc7; }
+        .pre-search-animations .home-health-shortcut:hover { box-shadow: 0 6px 18px rgba(16,56,44,0.12); border-color: #9fd6bd; }
+        .pre-search-animations .home-health-shortcut:nth-child(2):hover { border-color: #e2c78f; }
+        .pre-search-animations .home-health-shortcut .shortcut-icon {
+            display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+            border-radius: 12px; background: #e8f6f0; color: #087f5b; font-size: 0; margin-bottom: 10px;
+        }
+        .pre-search-animations .home-health-shortcut:nth-child(2) .shortcut-icon { background: #fdf1dc; color: #9a6200; }
+        .home-health-shortcut .shortcut-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .pre-search-animations .home-health-shortcut small { flex: 1 1 auto; }
+        .pre-search-animations .home-health-shortcut .shortcut-cta {
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 9px 14px;
+            border-radius: 10px; background: #087f5b; color: #ffffff; font-size: 13px; font-weight: 700; line-height: 1;
+        }
+        .pre-search-animations .home-health-shortcut:nth-child(2) .shortcut-cta { background: #b8750a; }
+        .home-health-shortcut .shortcut-cta svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+        .pre-search-animations .home-health-shortcut:hover .shortcut-cta svg { transform: translateX(2px); }
+        .service-hero-icon {
+            width: 60px; height: 60px; margin: 0 auto 6px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            background: #e8f6f0; color: #087f5b;
+        }
+        .service-hero-icon-amber { background: #fdf1dc; color: #9a6200; }
+        .service-hero-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
         .suggest-box {
             display: none;
             position: absolute;
@@ -4831,7 +4861,7 @@ HTML = r"""
 
         <div class="medical-menu-panel" id="menuPanelHospital">
             <div class="pincode-finder">
-                <div class="pincode-finder-title">📍 Find nearby hospitals by PIN code</div>
+                <div class="pincode-finder-title">Find nearby hospitals by PIN code</div>
                 <div class="pincode-grid">
                     <input id="menuPincodeState" type="text" maxlength="60" placeholder="State">
                     <input id="menuPincode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit PIN">
@@ -4952,14 +4982,16 @@ HTML = r"""
 
     <div class="home-health-shortcuts" id="homeHealthShortcuts">
         <button type="button" class="home-health-shortcut" id="openSpecialists">
-            <span class="shortcut-icon" aria-hidden="true">🩺</span>
+            <span class="shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg></span>
             <strong>Nearby Specialist Doctors</strong>
             <small>Find ENT, skin, heart, mental-health and other specialists nearby.</small>
+            <span class="shortcut-cta">Find a doctor <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
         </button>
         <button type="button" class="home-health-shortcut" id="openInsurance">
-            <span class="shortcut-icon" aria-hidden="true">🛡️</span>
+            <span class="shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span>
             <strong>Health Insurance Policies</strong>
             <small>Explore plans and compare coverage, exclusions and costs.</small>
+            <span class="shortcut-cta">View policies <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
         </button>
     </div>
 
@@ -5866,10 +5898,10 @@ HTML = r"""
 <!-- NEARBY SPECIALIST DOCTORS -->
 <div class="health-service-panel" id="specialistPanel">
   <div class="health-service-card">
-    <div style="text-align:center;font-size:42px">🩺</div>
+    <div class="service-hero-icon"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg></div>
     <h2>Nearby Specialist Doctors</h2>
     <p class="service-subtitle">Choose a specialist and allow location access, or enter your city/PIN code. Results open in Google Maps; please verify credentials and availability directly.</p>
-    <div class="service-location-row"><input id="doctorArea" type="text" maxlength="100" placeholder="City, area or 6-digit PIN code"><button type="button" class="service-action" id="doctorUseLocation">📍 Use My Location</button></div>
+    <div class="service-location-row"><input id="doctorArea" type="text" maxlength="100" placeholder="City, area or 6-digit PIN code"><button type="button" class="service-action" id="doctorUseLocation">Use My Location</button></div>
     <div class="service-link-list" id="doctorSpecialtyLinks">
       <a class="service-link" data-specialty="ENT specialist" href="https://www.google.com/maps/search/ENT+specialist+near+me" target="_blank" rel="noopener noreferrer">ENT Specialist <span>↗</span></a>
       <a class="service-link" data-specialty="Dermatologist" href="https://www.google.com/maps/search/Dermatologist+near+me" target="_blank" rel="noopener noreferrer">Dermatologist / Skin Specialist <span>↗</span></a>
@@ -5885,7 +5917,7 @@ HTML = r"""
 <!-- HEALTH INSURANCE POLICIES -->
 <div class="health-service-panel" id="insurancePanel">
   <div class="health-service-card" style="background:linear-gradient(145deg,#fffaf2,#fff4e1);border-color:#efdfc1">
-    <div style="text-align:center;font-size:42px">🛡️</div>
+    <div class="service-hero-icon service-hero-icon-amber"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
     <h2 style="color:#805716">Health Insurance Policies</h2>
     <p class="service-subtitle">Explore official insurer pages and compare premium, sum insured, waiting periods, exclusions, co-pay and hospital network before choosing.</p>
     <div class="insurance-list">
@@ -5984,14 +6016,6 @@ HTML = r"""
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span>
         <span class="nav-label">BuyMedi</span>
     </button>
-    <button type="button" class="app-nav-button" id="navStepCounter" data-section="step">
-        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg></span>
-        <span class="nav-label">Step Counter</span>
-    </button>
-    <button type="button" class="app-nav-button" id="navDiet" data-section="diet">
-        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg></span>
-        <span class="nav-label">Diet</span>
-    </button>
     <button type="button" class="app-nav-button" id="navHospitals" data-section="hospitals">
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 6v4"/><path d="M14 8h-4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M18 22V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v18"/></svg></span>
         <span class="nav-label">Hospitals</span>
@@ -6003,6 +6027,14 @@ HTML = r"""
     <button type="button" class="app-nav-button" id="navLabScan" data-section="labscan" aria-label="Laboratories and scanning centres">
         <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg></span>
         <span class="nav-label">Labs &amp; Scans</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navDiet" data-section="diet">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg></span>
+        <span class="nav-label">Diet</span>
+    </button>
+    <button type="button" class="app-nav-button" id="navStepCounter" data-section="step">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg></span>
+        <span class="nav-label">Step Counter</span>
     </button>
 </nav>
 
@@ -7487,8 +7519,8 @@ HTML = r"""
         const button = this; button.disabled = true; button.textContent = "Finding location…";
         navigator.geolocation.getCurrentPosition(function (position) {
             const coords = position.coords.latitude.toFixed(5) + ", " + position.coords.longitude.toFixed(5);
-            doctorArea.value = coords; updateDoctorLinks(coords); button.disabled = false; button.textContent = "📍 Location Ready";
-        }, function () { button.disabled = false; button.textContent = "📍 Use My Location"; alert("Location access was not available. Please allow location permission or enter your city/PIN code."); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+            doctorArea.value = coords; updateDoctorLinks(coords); button.disabled = false; button.textContent = "Location Ready";
+        }, function () { button.disabled = false; button.textContent = "Use My Location"; alert("Location access was not available. Please allow location permission or enter your city/PIN code."); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
     });
 
     function setActiveNav(button) {
@@ -9061,3 +9093,7 @@ if __name__ == "__main__":
 # V13.9.7: comparison is a compact HORIZONTAL table on phones too (all columns visible, no swiping, no cards);
 # bottom navigation uses clean line icons instead of emojis.
 # GIT: git add app.py ; git commit -m "Horizontal comparison table, clean nav icons" ; git push origin main
+
+# V13.9.8: home cards (Nearby Specialist Doctors, Health Insurance Policies) have a visible button and line icons
+# instead of emojis; bottom navigation order: BuyMedi, Hospitals, Medi Shop, Labs & Scans, Diet, Step Counter.
+# GIT: git add app.py ; git commit -m "Home cards with buttons, nav order" ; git push origin main
