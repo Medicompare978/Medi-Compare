@@ -246,8 +246,23 @@ def normalize_query(query):
     return " ".join(cleaned.split())
 
 
+_CANON_DROP = {"tablet", "tablets", "tab", "tabs", "capsule", "capsules", "cap", "caps", "strip", "strips",
+               "of", "s", "ip", "bp", "mg", "pack"}
+
+
+def canonical_query(query):
+    """Same medicine, one cache entry: 'dolo650', 'Dolo 650 tab' and 'DOLO-650 Tablet 15s' all become 'dolo 650'.
+    Only the CACHE KEY uses this; the pharmacies still receive the user's own wording."""
+    text = str(query or "").lower().replace("-", " ").replace("/", " ")
+    text = re.sub(r"(\d+)\s*(?:'s\b|\u2019s\b|s\b|tablets\b|tabs\b|capsules\b|caps\b)", " ", text)  # pack sizes
+    text = re.sub(r"[^a-z0-9. ]+", " ", text)
+    text = re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", text)
+    words = [w for w in text.split() if w not in _CANON_DROP]
+    return " ".join(words) or normalize_query(query)
+
+
 def make_cache_key(pharmacy, query):
-    return f"{pharmacy}:{normalize_query(query)}"
+    return f"{pharmacy}:{canonical_query(query)}"
 
 
 def first_value(product, *keys):
@@ -1212,7 +1227,7 @@ def fetch_through_provider_queue(pharmacy, query, fetch_products):
 SEARCH_DEADLINE_SECONDS = float(os.getenv("MEDICOMPARE_SEARCH_DEADLINE", "55"))
 
 
-def search_all_pharmacies(query):
+def search_all_pharmacies(query, force_live=False):
     jobs = {
         "apollo": fetch_apollo_products,
         "medplus": fetch_medplus_products,
@@ -1221,7 +1236,8 @@ def search_all_pharmacies(query):
         "netmeds": fetch_netmeds_products,
     }
     pool = ThreadPoolExecutor(max_workers=len(jobs))
-    futures = {name: pool.submit(cached_search, name, query, fn) for name, fn in jobs.items()}
+    extra = {"force_live": True} if force_live else {}
+    futures = {name: pool.submit(cached_search, name, query, fn, **extra) for name, fn in jobs.items()}
     deadline = time.time() + SEARCH_DEADLINE_SECONDS
     results = {}
     for name, future in futures.items():
@@ -1235,7 +1251,41 @@ def search_all_pharmacies(query):
     return results
 
 
-def cached_search(pharmacy, query, fetch_products):
+# "Refresh live prices" button: limited per visitor and per day, so it can never use up the pharmacy API budget.
+REFRESH_MIN_AGE_SECONDS = int(os.getenv("MEDICOMPARE_REFRESH_MIN_AGE", "600"))          # reuse data fresher than 10 min
+REFRESH_PER_USER_PER_DAY = int(os.getenv("MEDICOMPARE_REFRESH_PER_USER_PER_DAY", "3"))
+REFRESH_GLOBAL_PER_DAY = int(os.getenv("MEDICOMPARE_REFRESH_GLOBAL_PER_DAY", "30"))
+_refresh_lock = threading.Lock()
+_refresh_state = {"day": "", "global": 0, "ips": {}}
+
+
+def _refresh_today():
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() + 19800))  # India date
+
+
+def refresh_remaining(ip):
+    with _refresh_lock:
+        if _refresh_state["day"] != _refresh_today():
+            return REFRESH_PER_USER_PER_DAY
+        return max(0, REFRESH_PER_USER_PER_DAY - _refresh_state["ips"].get(ip, 0))
+
+
+def take_refresh_slot(ip):
+    """Returns (allowed, reason). reason is 'user' or 'global' when refused."""
+    with _refresh_lock:
+        today = _refresh_today()
+        if _refresh_state["day"] != today:
+            _refresh_state.update({"day": today, "global": 0, "ips": {}})
+        if _refresh_state["global"] >= REFRESH_GLOBAL_PER_DAY:
+            return False, "global"
+        if _refresh_state["ips"].get(ip, 0) >= REFRESH_PER_USER_PER_DAY:
+            return False, "user"
+        _refresh_state["global"] += 1
+        _refresh_state["ips"][ip] = _refresh_state["ips"].get(ip, 0) + 1
+        return True, ""
+
+
+def cached_search(pharmacy, query, fetch_products, force_live=False):
     """Shared catalogue + cache + quota protection.
 
     Priority order:
@@ -1247,8 +1297,11 @@ def cached_search(pharmacy, query, fetch_products):
     The external API is therefore NOT the first stop for every user's query.
     """
     cached = read_cache(pharmacy, query)
+    # Refresh: skip saved data unless someone refreshed it in the last REFRESH_MIN_AGE_SECONDS
+    # (then one refresh serves everybody). Budget, cooldown and stale fallback below still apply.
+    skip_saved = bool(force_live and (not cached or cached["age_seconds"] >= REFRESH_MIN_AGE_SECONDS))
 
-    if cached and cached["products"] and cached["age_seconds"] < CACHE_TTL_SECONDS:
+    if cached and cached["products"] and cached["age_seconds"] < CACHE_TTL_SECONDS and not skip_saved:
         source = "cache"
         if cached.get("source_type") == "catalogue":
             source = "catalogue"
@@ -1259,7 +1312,7 @@ def cached_search(pharmacy, query, fetch_products):
         return cached["products"], cached["fetched_at"], source
 
     # Search the shared catalogue BEFORE calling the external API.
-    catalogue_products = search_shared_catalogue(pharmacy, query)
+    catalogue_products = [] if skip_saved else search_shared_catalogue(pharmacy, query)
     if catalogue_products:
         latest = get_catalogue_latest_timestamp(pharmacy, catalogue_products)
         product_keys = []
@@ -1308,7 +1361,10 @@ def cached_search(pharmacy, query, fetch_products):
     with query_lock:
         # Another user may have filled cache/catalogue while we waited.
         cached = read_cache(pharmacy, query)
-        if cached and cached["products"] and cached["age_seconds"] < CACHE_TTL_SECONDS:
+        if (
+            cached and cached["products"] and cached["age_seconds"] < CACHE_TTL_SECONDS
+            and (not force_live or cached["age_seconds"] < REFRESH_MIN_AGE_SECONDS)
+        ):
             source = "cache"
             if cached.get("source_type") == "catalogue":
                 source = "catalogue"
@@ -1318,7 +1374,7 @@ def cached_search(pharmacy, query, fetch_products):
             )
             return cached["products"], cached["fetched_at"], source
 
-        catalogue_products = search_shared_catalogue(pharmacy, query)
+        catalogue_products = [] if skip_saved else search_shared_catalogue(pharmacy, query)
         if catalogue_products:
             latest = get_catalogue_latest_timestamp(pharmacy, catalogue_products)
             product_keys = []
@@ -2191,6 +2247,9 @@ HTML = r"""
         .service-hero-icon-amber { background: #fdf1dc; color: #9a6200; }
         .service-hero-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
+        .comparison-panel .comparison-fresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; font-size: 12px; color: #5f716b; }
+        .comparison-panel .refresh-link { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 10px; border: 1px solid #9fd6bd; background: #ffffff; color: #087f5b; font-weight: 700; font-size: 12px; text-decoration: none; }
+        .comparison-panel .refresh-note { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: #eef7f3; color: #0b4f3a; font-size: 12px; }
         .suggest-box {
             display: none;
             position: absolute;
@@ -5071,6 +5130,11 @@ HTML = r"""
 <section class="comparison-panel" id="priceComparison" aria-label="Medicine price comparison">
     <h3>📊 Compare prices across pharmacies</h3>
     <p class="comparison-caption">Offers found for this search. Check the exact strength, composition and pack size before buying. Prices and stock can change on pharmacy websites.</p>
+    <div class="comparison-fresh">
+        <span class="fresh-label">{{ freshness_label }}</span>
+        <a class="refresh-link" rel="nofollow" href="/?medicine={{ searched_medicine|urlencode }}&refresh=1">Refresh live prices ({{ refresh_left }} left today)</a>
+    </div>
+    {% if refresh_note %}<div class="refresh-note">{{ refresh_note }}</div>{% endif %}
     <div class="comparison-table-wrap">
         <table class="comparison-table">
             <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th><span class="txt-long">Dosage</span><span class="txt-short">Dose</span></th><th>Price</th><th>Open</th></tr></thead>
@@ -8622,6 +8686,13 @@ def image_proxy():
         return Response("Image unavailable", status=502, mimetype="text/plain")
 
 
+@app.route("/healthz", methods=["GET", "HEAD"])
+def healthz():
+    """Tiny always-fast page for the keep-alive bot / uptime monitors.
+    No database, no pharmacy calls, no AI calls, so pinging it costs nothing."""
+    return {"status": "ok"}, 200, {"Cache-Control": "no-store"}
+
+
 @app.route("/", methods=["GET"])
 def home():
 
@@ -8643,6 +8714,9 @@ def home():
     }
 
     error_message = ""
+    freshness_label = ""
+    refresh_note = ""
+    client_ip = _scan_client_ip()
 
     if searched_medicine:
 
@@ -8655,7 +8729,19 @@ def home():
             # A first-time query may use the provider API. Repeated queries
             # from any user use the same saved data until refresh is needed.
 
-            provider_results = search_all_pharmacies(searched_medicine)
+            force_live = False
+            if request.args.get("refresh") == "1":
+                allowed, why = take_refresh_slot(client_ip)
+                if allowed:
+                    force_live = True
+                    refresh_note = ("Live prices refreshed. Pharmacies already checked in the last "
+                                    f"{REFRESH_MIN_AGE_SECONDS // 60} minutes were reused.")
+                elif why == "user":
+                    refresh_note = (f"You have used today's {REFRESH_PER_USER_PER_DAY} live refreshes. "
+                                    "Showing the latest saved prices.")
+                else:
+                    refresh_note = "Live refresh is paused for today to protect pharmacy limits. Showing the latest saved prices."
+            provider_results = search_all_pharmacies(searched_medicine, force_live=force_live)
 
             (
                 apollo_products,
@@ -8730,6 +8816,11 @@ def home():
                         _status = None
                     if _status:
                         cache_meta[_name]["label"] += f" (provider error {_status})"
+
+            _times = [t for t in (apollo_checked_at, medplus_checked_at, pharmeasy_checked_at,
+                                  tata1mg_checked_at, netmeds_checked_at) if t]
+            if _times:
+                freshness_label = "Prices last checked " + cache_age_label(time.time() - min(_times))
 
             # Build a compact cross-pharmacy price summary from live/catalogue results.
             # Use each pharmacy's first returned offer; never invent missing prices or URLs.
@@ -8830,6 +8921,9 @@ def home():
         comparison_rows=comparison_rows,
         cache_meta=cache_meta,
         error_message=error_message,
+        freshness_label=freshness_label,
+        refresh_note=refresh_note,
+        refresh_left=refresh_remaining(client_ip),
     )
 
 
@@ -9097,3 +9191,10 @@ if __name__ == "__main__":
 # V13.9.8: home cards (Nearby Specialist Doctors, Health Insurance Policies) have a visible button and line icons
 # instead of emojis; bottom navigation order: BuyMedi, Hospitals, Medi Shop, Labs & Scans, Diet, Step Counter.
 # GIT: git add app.py ; git commit -m "Home cards with buttons, nav order" ; git push origin main
+
+# V13.9.9: /healthz added for the keep-alive bot (keepalive_bot.py, keepalive.yml or cron-job.org).
+# GIT: git add app.py keepalive_bot.py ; git commit -m "Add healthz and keep-alive bot" ; git push origin main
+
+# V13.10.0: one cache entry per medicine (spelling-proof), "Prices last checked ..." line and a limited
+# "Refresh live prices" button (3 per visitor per day, 30 per day in total, data under 10 minutes old is reused).
+# GIT: git add app.py ; git commit -m "Spelling-proof cache, refresh live prices button" ; git push origin main
