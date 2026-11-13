@@ -265,6 +265,91 @@ def make_cache_key(pharmacy, query):
     return f"{pharmacy}:{canonical_query(query)}"
 
 
+def _price_number(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = re.sub(r"[^0-9.]", "", value.replace(",", ""))
+        if cleaned and cleaned != "." and cleaned.count(".") <= 1:
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+    return None
+
+
+def _walk_raw(raw, depth=0):
+    """Yield (lower-case key, value) pairs of a raw pharmacy product, including nested objects."""
+    if depth > 3 or not isinstance(raw, dict):
+        return
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            yield from _walk_raw(value, depth + 1)
+        elif isinstance(value, list) and value and isinstance(value[0], dict) and depth < 2:
+            yield from _walk_raw(value[0], depth + 1)
+        else:
+            yield str(key).lower().replace("_", "").replace("-", ""), value
+
+
+_PRICE_BAD = ("percent", "pct", "save", "gst", "tax", "qty", "quantity", "itemcount", "stockcount", "reviewcount", "totalcount", "perunit", "unitprice", "rating", "review")
+
+
+def smart_price(raw):
+    """Selling price when the usual field names are missing: any positive number under a key that looks like a
+    price (salePrice, discountedPrice, offerAmount, pricing.final ...). MRP and discount percentages are ignored."""
+    best = None
+    for key, value in _walk_raw(raw):
+        if "mrp" in key or "list" in key or any(bad in key for bad in _PRICE_BAD):
+            continue
+        if not any(t in key for t in ("price", "sell", "sale", "offer", "final", "special", "discounted", "payable", "amount")):
+            continue
+        if key.startswith("discount") and not any(t in key for t in ("price", "amount", "ed")):
+            continue
+        number = _price_number(value)
+        if number and 0 < number < 100000:
+            rank = 0 if any(t in key for t in ("sell", "sale", "final", "offer", "special", "discounted", "payable")) else 1
+            if best is None or rank < best[0]:
+                best = (rank, number)
+    return best[1] if best else None
+
+
+def smart_mrp(raw):
+    for key, value in _walk_raw(raw):
+        if "mrp" in key and not any(bad in key for bad in _PRICE_BAD):
+            number = _price_number(value)
+            if number and 0 < number < 100000:
+                return number
+    return None
+
+
+def repair_price_fields(products):
+    """A product with price 0/None: look in its raw data, else fall back to the MRP and mark it as MRP.
+    (The pharmacy's own page shows a price; our parser just did not find the field.)"""
+    for product in products or []:
+        if not isinstance(product, dict):
+            continue
+        try:
+            price = float(product.get("price") or 0)
+        except (TypeError, ValueError):
+            price = 0
+        if price > 0:
+            continue
+        raw = product.get("raw_source") if isinstance(product.get("raw_source"), dict) else None
+        found = smart_price(raw) if raw else None
+        if found:
+            product["price"] = found
+            continue
+        try:
+            mrp = float(product.get("mrp") or 0)
+        except (TypeError, ValueError):
+            mrp = 0
+        if mrp > 0:
+            product["price"] = mrp
+            product["price_is_mrp"] = True
+
+
 def first_value(product, *keys):
     if not isinstance(product, dict):
         return None
@@ -1227,7 +1312,7 @@ def fetch_through_provider_queue(pharmacy, query, fetch_products):
 SEARCH_DEADLINE_SECONDS = float(os.getenv("MEDICOMPARE_SEARCH_DEADLINE", "55"))
 
 
-def search_all_pharmacies(query, force_live=False):
+def search_all_pharmacies(query, force_live=False, live_set=None, saved_only=False, only=None):
     jobs = {
         "apollo": fetch_apollo_products,
         "medplus": fetch_medplus_products,
@@ -1235,9 +1320,17 @@ def search_all_pharmacies(query, force_live=False):
         "tata1mg": fetch_tata1mg_products,
         "netmeds": fetch_netmeds_products,
     }
-    pool = ThreadPoolExecutor(max_workers=len(jobs))
-    extra = {"force_live": True} if force_live else {}
-    futures = {name: pool.submit(cached_search, name, query, fn, **extra) for name, fn in jobs.items()}
+    if only is not None:
+        jobs = {k: v for k, v in jobs.items() if k in only}
+    pool = ThreadPoolExecutor(max_workers=max(1, len(jobs)))
+    futures = {}
+    for name, fn in jobs.items():
+        extra = {}
+        if force_live or (live_set and name in live_set):
+            extra["force_live"] = True
+        elif saved_only:
+            extra["saved_only"] = True
+        futures[name] = pool.submit(cached_search, name, query, fn, **extra)
     deadline = time.time() + SEARCH_DEADLINE_SECONDS
     results = {}
     for name, future in futures.items():
@@ -1251,41 +1344,49 @@ def search_all_pharmacies(query, force_live=False):
     return results
 
 
-# "Refresh live prices" button: limited per visitor and per day, so it can never use up the pharmacy API budget.
-REFRESH_MIN_AGE_SECONDS = int(os.getenv("MEDICOMPARE_REFRESH_MIN_AGE", "600"))          # reuse data fresher than 10 min
-REFRESH_PER_USER_PER_DAY = int(os.getenv("MEDICOMPARE_REFRESH_PER_USER_PER_DAY", "3"))
-REFRESH_GLOBAL_PER_DAY = int(os.getenv("MEDICOMPARE_REFRESH_GLOBAL_PER_DAY", "30"))
-_refresh_lock = threading.Lock()
-_refresh_state = {"day": "", "global": 0, "ips": {}}
+# ON-DEMAND LIVE PRICES (saves pharmacy-API calls)
+# Searching shows SAVED prices instantly (0 API calls). A live price costs 1 API call and is only fetched when the
+# visitor taps "Check live" for ONE pharmacy. A brand-new medicine (no saved price anywhere) auto-fetches only the
+# first MEDICOMPARE_AUTO_LIVE_FOR_NEW pharmacies (default 2). Set MEDICOMPARE_LIVE_MODE=all for the old behaviour.
+LIVE_MODE = os.getenv("MEDICOMPARE_LIVE_MODE", "on_demand").strip().lower()
+LIVE_CREDITS_PER_USER_PER_DAY = int(os.getenv("MEDICOMPARE_LIVE_CREDITS_PER_USER_PER_DAY", "20"))
+AUTO_LIVE_FOR_NEW = int(os.getenv("MEDICOMPARE_AUTO_LIVE_FOR_NEW", "2"))
+AUTO_LIVE_ORDER = [x.strip() for x in os.getenv(
+    "MEDICOMPARE_AUTO_LIVE_ORDER", "pharmeasy,netmeds,tata1mg,apollo,medplus").split(",") if x.strip()]
+REFRESH_MIN_AGE_SECONDS = int(os.getenv("MEDICOMPARE_REFRESH_MIN_AGE", "600"))   # data fresher than 10 min is reused
+PHARMACY_KEYS = ["apollo", "medplus", "pharmeasy", "tata1mg", "netmeds"]
+PHARMACY_NAMES = {"apollo": "Apollo", "medplus": "MedPlus", "pharmeasy": "PharmEasy",
+                  "tata1mg": "Tata 1mg", "netmeds": "Netmeds"}
+_credit_lock = threading.Lock()
+_credit_state = {"day": "", "ips": {}}
 
 
-def _refresh_today():
+def _credit_today():
     return time.strftime("%Y-%m-%d", time.gmtime(time.time() + 19800))  # India date
 
 
-def refresh_remaining(ip):
-    with _refresh_lock:
-        if _refresh_state["day"] != _refresh_today():
-            return REFRESH_PER_USER_PER_DAY
-        return max(0, REFRESH_PER_USER_PER_DAY - _refresh_state["ips"].get(ip, 0))
+def live_credits_left(ip):
+    with _credit_lock:
+        if _credit_state["day"] != _credit_today():
+            return LIVE_CREDITS_PER_USER_PER_DAY
+        return max(0, LIVE_CREDITS_PER_USER_PER_DAY - _credit_state["ips"].get(ip, 0))
 
 
-def take_refresh_slot(ip):
-    """Returns (allowed, reason). reason is 'user' or 'global' when refused."""
-    with _refresh_lock:
-        today = _refresh_today()
-        if _refresh_state["day"] != today:
-            _refresh_state.update({"day": today, "global": 0, "ips": {}})
-        if _refresh_state["global"] >= REFRESH_GLOBAL_PER_DAY:
-            return False, "global"
-        if _refresh_state["ips"].get(ip, 0) >= REFRESH_PER_USER_PER_DAY:
-            return False, "user"
-        _refresh_state["global"] += 1
-        _refresh_state["ips"][ip] = _refresh_state["ips"].get(ip, 0) + 1
-        return True, ""
+def take_live_credits(ip, cost):
+    """Spend `cost` live checks for this visitor today. Returns (allowed, left). Best-effort per visitor;
+    the per-pharmacy daily call limit (MEDICOMPARE_DAILY_PROVIDER_CALL_LIMIT) is the hard safety net."""
+    with _credit_lock:
+        today = _credit_today()
+        if _credit_state["day"] != today:
+            _credit_state.update({"day": today, "ips": {}})
+        used = _credit_state["ips"].get(ip, 0)
+        if used + cost > LIVE_CREDITS_PER_USER_PER_DAY:
+            return False, max(0, LIVE_CREDITS_PER_USER_PER_DAY - used)
+        _credit_state["ips"][ip] = used + cost
+        return True, LIVE_CREDITS_PER_USER_PER_DAY - used - cost
 
 
-def cached_search(pharmacy, query, fetch_products, force_live=False):
+def cached_search(pharmacy, query, fetch_products, force_live=False, saved_only=False):
     """Shared catalogue + cache + quota protection.
 
     Priority order:
@@ -1354,6 +1455,13 @@ def cached_search(pharmacy, query, fetch_products, force_live=False):
             f"({len(catalogue_products)} saved products; no API call)"
         )
         return catalogue_products, latest, "catalogue"
+
+    if saved_only and not skip_saved:
+        # On-demand mode: never call the pharmacy API from here. Older saved data is still shown (labelled).
+        if cached and cached["products"] and cached["age_seconds"] < STALE_CACHE_MAX_SECONDS:
+            print(f"{pharmacy}: SAVED (older) for '{normalize_query(query)}' ({cache_age_label(cached['age_seconds'])}); no API call")
+            return cached["products"], cached["fetched_at"], "stale"
+        return [], None, "none"
 
     # Only the SAME pharmacy + SAME query is serialized. Different medicines
     # or pharmacies can proceed independently.
@@ -1679,10 +1787,14 @@ def normalize_netmeds_products(products):
             product, "price", "selling_price", "discounted_price",
             "final_price", "special_price", "offer_price"
         )
+        if to_float(price, 0) <= 0:
+            price = smart_price(product) or price
         mrp = first_value(
             product, "mrp", "MRP", "mrp_price",
             "maximum_retail_price", "list_price"
-        )
+        ) or smart_mrp(product)
+        if to_float(price, 0) <= 0:
+            print("Pharmacy product without price; fields sent:", sorted(str(k) for k in product.keys())[:30])
         discount = first_value(
             product, "discount_percentage", "discount_percent",
             "discount", "discount_str", "discountPercentage"
@@ -1766,7 +1878,11 @@ def normalize_medplus_products(products):
         if image_url:
             image_url = urljoin("https://www.medplusmart.com/", str(image_url).strip())
         price = first_value(product, "price", "selling_price", "discounted_price", "final_price", "regular_price", "membership_price")
-        mrp = first_value(product, "mrp", "MRP", "mrp_price", "maximum_retail_price")
+        if to_float(price, 0) <= 0:
+            price = smart_price(product) or price
+        mrp = first_value(product, "mrp", "MRP", "mrp_price", "maximum_retail_price") or smart_mrp(product)
+        if to_float(price, 0) <= 0:
+            print("MedPlus: no price found; fields sent:", sorted(str(k) for k in product.keys())[:30])
         normalized.append({
             "name": name or "Unnamed medicine",
             "manufacturer": first_value(product, "manufacturer", "manufacturer_name", "brand", "manufacturerName"),
@@ -1972,8 +2088,25 @@ def fetch_netmeds_products(query):
     return {"ok": True, "products": normalized}
 
 
+def plain_status(fetched_at, source):
+    """Short emoji-free status for the live-check panel."""
+    if fetched_at is None:
+        return {"none": "No saved price yet", "blocked": "Paused for now (limit)", "budget": "Daily limit reached",
+                "error": "Live data unavailable", "timeout": "Took too long"}.get(source, "No data")
+    age = cache_age_label(max(0, time.time() - float(fetched_at)))
+    if source == "live":
+        return "Live, checked just now"
+    if source == "cache":
+        return f"Saved, checked {age}"
+    if source == "catalogue":
+        return f"Catalogue, checked {age}"
+    return f"Older saved data, {age}"
+
+
 def format_cache_meta(fetched_at, source):
     if fetched_at is None:
+        if source == "none":
+            return {"label": "No saved price yet. Tap Check live.", "source": source}
         if source == "blocked":
             return {
                 "label": "⏳ Live data temporarily unavailable",
@@ -2250,6 +2383,17 @@ HTML = r"""
         .comparison-panel .comparison-fresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; font-size: 12px; color: #5f716b; }
         .comparison-panel .refresh-link { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 10px; border: 1px solid #9fd6bd; background: #ffffff; color: #087f5b; font-weight: 700; font-size: 12px; text-decoration: none; }
         .comparison-panel .refresh-note { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: #eef7f3; color: #0b4f3a; font-size: 12px; }
+        .live-panel { margin: 14px 0; padding: 16px; border: 1px solid #dbe8e3; border-radius: 16px; background: #ffffff; }
+        .live-panel h3 { margin: 0 0 6px; font-size: 17px; color: #0b4f3a; }
+        .live-panel .live-sub { margin: 0 0 8px; font-size: 12.5px; color: #5f716b; line-height: 1.4; }
+        .live-panel .refresh-note { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: #eef7f3; color: #0b4f3a; font-size: 12px; }
+        .live-list { list-style: none; margin: 8px 0; padding: 0; }
+        .live-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: center; padding: 10px 0; border-top: 1px solid #eef3f1; }
+        .live-name { grid-column: 1; font-weight: 800; font-size: 14px; color: #12302a; }
+        .live-status { grid-column: 1; font-size: 12px; color: #6b7b74; }
+        .live-btn { grid-column: 2; grid-row: 1 / span 2; padding: 8px 12px; border-radius: 10px; border: 1px solid #9fd6bd; background: #ffffff; color: #087f5b; font-weight: 700; font-size: 12px; text-decoration: none; white-space: nowrap; }
+        .live-all { display: block; text-align: center; margin-top: 8px; padding: 11px 12px; border-radius: 10px; background: #087f5b; color: #ffffff; font-weight: 700; font-size: 13px; text-decoration: none; }
+        .mrp-tag { font-size: 9px; font-weight: 700; color: #6b7b74; border: 1px solid #cfdcd6; border-radius: 4px; padding: 0 3px; vertical-align: middle; }
         .suggest-box {
             display: none;
             position: absolute;
@@ -5130,11 +5274,7 @@ HTML = r"""
 <section class="comparison-panel" id="priceComparison" aria-label="Medicine price comparison">
     <h3>📊 Compare prices across pharmacies</h3>
     <p class="comparison-caption">Offers found for this search. Check the exact strength, composition and pack size before buying. Prices and stock can change on pharmacy websites.</p>
-    <div class="comparison-fresh">
-        <span class="fresh-label">{{ freshness_label }}</span>
-        <a class="refresh-link" rel="nofollow" href="/?medicine={{ searched_medicine|urlencode }}&refresh=1">Refresh live prices ({{ refresh_left }} left today)</a>
-    </div>
-    {% if refresh_note %}<div class="refresh-note">{{ refresh_note }}</div>{% endif %}
+    {% if freshness_label %}<div class="comparison-fresh"><span class="fresh-label">{{ freshness_label }}</span></div>{% endif %}
     <div class="comparison-table-wrap">
         <table class="comparison-table">
             <thead><tr><th>Pharmacy</th><th>Medicine / pack</th><th><span class="txt-long">Dosage</span><span class="txt-short">Dose</span></th><th>Price</th><th>Open</th></tr></thead>
@@ -5144,7 +5284,7 @@ HTML = r"""
                     <td>{{ item.pharmacy }}{% if item.is_best %}<span class="best-value-pill">BEST VALUE*</span>{% endif %}</td>
                     <td>{{ item.name }}{% if item.pack_size %}<br><span style="color:#6b7b74;font-size:11px">{{ item.pack_size }}</span>{% endif %}</td>
                     <td class="compare-dose">{{ item.strength if item.strength else "—" }}</td>
-                    <td class="compare-price{% if item.price is none %} compare-price-na{% endif %}">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% else %}<span class="txt-long">Price unavailable</span><span class="txt-short">N/A</span>{% endif %}</td>
+                    <td class="compare-price{% if item.price is none %} compare-price-na{% endif %}">{% if item.price is not none %}₹{{ "%.2f"|format(item.price|float) }}{% if item.price_is_mrp %} <span class="mrp-tag">MRP</span>{% endif %}{% else %}<span class="txt-long">Price unavailable</span><span class="txt-short">N/A</span>{% endif %}</td>
                     <td><a class="comparison-buy" href="{{ item.url if item.url else item.search_url }}" target="_blank" rel="noopener noreferrer"><span class="txt-long">{{ "View product ↗" if item.url else ("Search on " ~ item.pharmacy ~ " ↗") }}</span><span class="txt-short">{{ "View ↗" if item.url else "Search ↗" }}</span></a></td>
                 </tr>
             {% endfor %}
@@ -5155,6 +5295,20 @@ HTML = r"""
         <a href="#apollo-results">Apollo ↓</a><a href="#medplus-results">MedPlus ↓</a><a href="#pharmeasy-results">PharmEasy ↓</a><a href="#tata1mg-results">Tata 1mg ↓</a><a href="#netmeds-results">Netmeds ↓</a>
     </div>
     <p class="comparison-caption" style="margin:10px 0 0">*Best value means the lowest displayed price among offers returned for this search; it is not a recommendation to use a medicine.</p>
+</section>
+{% endif %}
+
+{% if searched_medicine and live_rows %}
+<section class="live-panel" id="liveCheck" aria-label="Live price check">
+    <h3>Live price check</h3>
+    <p class="live-sub">Saved prices show instantly. Tap <strong>Check live</strong> to fetch a fresh price from one pharmacy. {{ credits_left }} live checks left today.</p>
+    {% if refresh_note %}<div class="refresh-note">{{ refresh_note }}</div>{% endif %}
+    <ul class="live-list">
+    {% for row in live_rows %}
+        <li><span class="live-name">{{ row.name }}</span><span class="live-status">{{ row.label }}</span><a class="live-btn" rel="nofollow" href="/?medicine={{ searched_medicine|urlencode }}&live={{ row.key }}#liveCheck">Check live</a></li>
+    {% endfor %}
+    </ul>
+    <a class="live-all" rel="nofollow" href="/?medicine={{ searched_medicine|urlencode }}&refresh=1#liveCheck">Check all 5 pharmacies live (5 checks)</a>
 </section>
 {% endif %}
 
@@ -8716,6 +8870,7 @@ def home():
     error_message = ""
     freshness_label = ""
     refresh_note = ""
+    live_rows = []
     client_ip = _scan_client_ip()
 
     if searched_medicine:
@@ -8729,19 +8884,39 @@ def home():
             # A first-time query may use the provider API. Repeated queries
             # from any user use the same saved data until refresh is needed.
 
-            force_live = False
-            if request.args.get("refresh") == "1":
-                allowed, why = take_refresh_slot(client_ip)
+            live_param = request.args.get("live", "").strip().lower()
+            targets = set()
+            if live_param in PHARMACY_KEYS:
+                targets = {live_param}
+            elif request.args.get("refresh") == "1":
+                targets = set(PHARMACY_KEYS)
+            if targets:
+                allowed, _left = take_live_credits(client_ip, len(targets))
                 if allowed:
-                    force_live = True
-                    refresh_note = ("Live prices refreshed. Pharmacies already checked in the last "
+                    _names = ", ".join(PHARMACY_NAMES[k] for k in PHARMACY_KEYS if k in targets)
+                    refresh_note = (f"Live check done for {_names}. Prices already checked in the last "
                                     f"{REFRESH_MIN_AGE_SECONDS // 60} minutes were reused.")
-                elif why == "user":
-                    refresh_note = (f"You have used today's {REFRESH_PER_USER_PER_DAY} live refreshes. "
-                                    "Showing the latest saved prices.")
                 else:
-                    refresh_note = "Live refresh is paused for today to protect pharmacy limits. Showing the latest saved prices."
-            provider_results = search_all_pharmacies(searched_medicine, force_live=force_live)
+                    targets = set()
+                    refresh_note = (f"You have used today's {LIVE_CREDITS_PER_USER_PER_DAY} live checks. "
+                                    "Showing saved prices.")
+
+            if LIVE_MODE == "all":
+                provider_results = search_all_pharmacies(searched_medicine, force_live=bool(targets))
+            else:
+                provider_results = search_all_pharmacies(searched_medicine, live_set=targets, saved_only=True)
+                if (not targets and AUTO_LIVE_FOR_NEW > 0
+                        and all(r[2] == "none" for r in provider_results.values())):
+                    auto = [k for k in AUTO_LIVE_ORDER if k in PHARMACY_KEYS][:AUTO_LIVE_FOR_NEW]
+                    allowed, _left = take_live_credits(client_ip, len(auto))
+                    if allowed:
+                        provider_results.update(search_all_pharmacies(searched_medicine, only=set(auto)))
+                        refresh_note = ("New medicine: live prices fetched from "
+                                        + ", ".join(PHARMACY_NAMES[k] for k in auto)
+                                        + ". Tap Check live to add the other pharmacies.")
+                    else:
+                        refresh_note = (f"You have used today's {LIVE_CREDITS_PER_USER_PER_DAY} live checks. "
+                                        "Tap Check live tomorrow, or try a medicine that is already saved.")
 
             (
                 apollo_products,
@@ -8822,8 +8997,16 @@ def home():
             if _times:
                 freshness_label = "Prices last checked " + cache_age_label(time.time() - min(_times))
 
+            for _key, _src, _ts in (("apollo", apollo_source, apollo_checked_at), ("medplus", medplus_source, medplus_checked_at),
+                                    ("pharmeasy", pharmeasy_source, pharmeasy_checked_at),
+                                    ("tata1mg", tata1mg_source, tata1mg_checked_at), ("netmeds", netmeds_source, netmeds_checked_at)):
+                live_rows.append({"key": _key, "name": PHARMACY_NAMES[_key], "label": plain_status(_ts, _src)})
+
             # Build a compact cross-pharmacy price summary from live/catalogue results.
             # Use each pharmacy's first returned offer; never invent missing prices or URLs.
+            for _plist in (apollo_products, medplus_products, pharmeasy_products, tata1mg_products, netmeds_products):
+                repair_price_fields(_plist)
+
             pharmacy_offers = [
                 ("Apollo", apollo_products, "https://www.apollopharmacy.in/search-medicines?searchTerm=" + requests.utils.quote(searched_medicine)),
                 ("MedPlus", medplus_products, "https://www.medplusmart.com/"),
@@ -8854,11 +9037,13 @@ def home():
                     "pack_size": product.get("pack_size") or product.get("pack"),
                     "strength": product_strength_label(product),
                     "price": parsed_price,
+                    "price_is_mrp": bool(product.get("price_is_mrp")),
                     "url": product.get("product_url"),
                     "search_url": fallback_url,
                     "is_best": False,
                 })
-            priced_rows = [row for row in comparison_rows if row["price"] is not None and row["price"] > 0]
+            # MRP-only prices are shown but never called "best value" (the real selling price may be lower).
+            priced_rows = [row for row in comparison_rows if row["price"] is not None and row["price"] > 0 and not row["price_is_mrp"]]
             if priced_rows:
                 lowest_price = min(row["price"] for row in priced_rows)
                 for row in priced_rows:
@@ -8923,7 +9108,8 @@ def home():
         error_message=error_message,
         freshness_label=freshness_label,
         refresh_note=refresh_note,
-        refresh_left=refresh_remaining(client_ip),
+        live_rows=live_rows,
+        credits_left=live_credits_left(client_ip),
     )
 
 
@@ -9198,3 +9384,15 @@ if __name__ == "__main__":
 # V13.10.0: one cache entry per medicine (spelling-proof), "Prices last checked ..." line and a limited
 # "Refresh live prices" button (3 per visitor per day, 30 per day in total, data under 10 minutes old is reused).
 # GIT: git add app.py ; git commit -m "Spelling-proof cache, refresh live prices button" ; git push origin main
+
+# V13.11.0 ON-DEMAND LIVE PRICES (pharmacy-API calls cut by about 5x):
+#  - A search shows SAVED prices with 0 API calls. "Check live" fetches ONE pharmacy (1 call); "Check all" costs 5 checks.
+#  - A brand-new medicine (nothing saved anywhere) auto-fetches only 2 pharmacies (MEDICOMPARE_AUTO_LIVE_FOR_NEW, 0 = none, 5 = all).
+#  - Each visitor has 20 live checks per day (MEDICOMPARE_LIVE_CREDITS_PER_USER_PER_DAY). Data checked <10 min ago is reused.
+#  - MEDICOMPARE_LIVE_MODE=all restores the old "every search asks every pharmacy" behaviour.
+# GIT: git add app.py ; git commit -m "On-demand live price checks" ; git push origin main
+
+# V13.11.1: (1) MedPlus / Tata 1mg "Price unavailable" fix: when the usual price field is missing, the parser now looks at any
+# price-like field (including nested ones) and falls back to MRP (marked "MRP", never "best value"); the log prints the field
+# names the pharmacy sent so the next fix is exact. (2) On-demand live checks (see V13.11.0 notes above).
+# GIT: git add app.py ; git commit -m "Fix missing prices, on-demand live checks" ; git push origin main
